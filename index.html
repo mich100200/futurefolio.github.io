@@ -26,19 +26,38 @@
       const [tab, setTab] = useState("portfolio");
       const [expandedStock, setExpandedStock] = useState(null);
       const [goalProgress, setGoalProgress] = useState(65);
-      const [showSplash, setShowSplash] = useState(true); // modal state
+      const [showSplash, setShowSplash] = useState(true);
+      const [stocks, setStocks] = useState([
+        { ticker: "AAPL", percent: 3.2, name: "Apple Inc.", price: "$191.57", summary: "Leading tech company known for iPhones, Macs, and innovation.", risk: "Low" },
+        { ticker: "TSLA", percent: -1.8, name: "Tesla Inc.", price: "$239.45", summary: "Electric vehicle manufacturer and clean energy innovator.", risk: "High" },
+        { ticker: "AMZN", percent: 0.9, name: "Amazon.com Inc.", price: "$132.76", summary: "E-commerce and cloud computing giant.", risk: "Medium" },
+        { ticker: "GOOG", percent: 0.0, name: "Alphabet Inc.", price: "$122.03", summary: "Parent company of Google and major digital ad player.", risk: "Medium" },
+      ]);
       const goalTotal = 200;
       const chartRef = useRef(null);
       const chartInstanceRef = useRef(null);
 
+      // Random stock flow every 5 seconds
+      useEffect(() => {
+        const interval = setInterval(() => {
+          setStocks((prev) =>
+            prev.map((stock) => {
+              let change = (Math.random() * 0.5 - 0.25).toFixed(2); // range -0.25 to +0.25
+              let newPercent = parseFloat(stock.percent) + parseFloat(change);
+              return { ...stock, percent: parseFloat(newPercent.toFixed(2)) };
+            })
+          );
+        }, 5000);
+        return () => clearInterval(interval);
+      }, []);
+
+      // Pie Chart
       const pieData = {
         labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
         datasets: [
           {
             data: [45, 25, 15, 10, 5],
-            backgroundColor: [
-              "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"
-            ],
+            backgroundColor: ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"],
             borderWidth: 1,
           },
         ],
@@ -46,9 +65,7 @@
 
       useEffect(() => {
         if (tab === "portfolio" && chartRef.current) {
-          if (chartInstanceRef.current) {
-            chartInstanceRef.current.destroy();
-          }
+          if (chartInstanceRef.current) chartInstanceRef.current.destroy();
           const ctx = chartRef.current.getContext("2d");
           chartInstanceRef.current = new Chart(ctx, {
             type: "doughnut",
@@ -73,18 +90,11 @@
         }
       }, [tab]);
 
-      const stockData = [
-        { ticker: "AAPL", change: "+3.2%", status: "up", name: "Apple Inc.", price: "$191.57", summary: "Leading tech company known for iPhones, Macs, and innovation.", risk: "Low" },
-        { ticker: "TSLA", change: "-1.8%", status: "down", name: "Tesla Inc.", price: "$239.45", summary: "Electric vehicle manufacturer and clean energy innovator.", risk: "High" },
-        { ticker: "AMZN", change: "+0.9%", status: "up", name: "Amazon.com Inc.", price: "$132.76", summary: "E-commerce and cloud computing giant.", risk: "Medium" },
-        { ticker: "GOOG", change: "0.0%", status: "neutral", name: "Alphabet Inc.", price: "$122.03", summary: "Parent company of Google and major digital ad player.", risk: "Medium" },
-      ];
-
       const handleAddSavings = () => {
         const input = prompt("How much would you like to add?");
         const amount = parseFloat(input);
         if (!isNaN(amount) && amount > 0) {
-          setGoalProgress(prev => Math.min(prev + amount, goalTotal));
+          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
         } else {
           alert("Please enter a valid number greater than 0.");
         }
@@ -99,10 +109,7 @@
                 <p className="text-gray-700 text-sm">
                   Futurefolio is a guided investing app built for young learners. It helps you explore real-world finance through simulated stocks, educational tips, and fun goal tracking. Build your first portfolio, research companies, and learn how to grow your savings — all in a safe, kid-friendly environment!
                 </p>
-                <button
-                  onClick={() => setShowSplash(false)}
-                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                >
+                <button onClick={() => setShowSplash(false)} className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
                   Get Started
                 </button>
               </div>
@@ -131,27 +138,34 @@
                 <div className="bg-white shadow rounded p-4">
                   <h2 className="text-xl font-semibold mb-4">Stock Performance</h2>
                   <ul className="space-y-2">
-                    {stockData.map(stock => (
-                      <li key={stock.ticker}>
-                        <div
-                          className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${
-                            stock.status === "up" ? "text-green-600" : stock.status === "down" ? "text-red-500" : "text-yellow-600"
-                          } hover:bg-gray-100`}
-                          onClick={() => setExpandedStock(expandedStock === stock.ticker ? null : stock.ticker)}
-                        >
-                          <span>{stock.ticker}</span>
-                          <span>{stock.change}</span>
-                        </div>
-                        {expandedStock === stock.ticker && (
-                          <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
-                            <p><strong>Name:</strong> {stock.name}</p>
-                            <p><strong>Price:</strong> {stock.price}</p>
-                            <p><strong>Summary:</strong> {stock.summary}</p>
-                            <p><strong>Risk Level:</strong> {stock.risk}</p>
+                    {stocks.map((stock) => {
+                      let status = stock.percent > 0 ? "up" : stock.percent < 0 ? "down" : "neutral";
+                      return (
+                        <li key={stock.ticker}>
+                          <div
+                            className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${
+                              status === "up"
+                                ? "text-green-600"
+                                : status === "down"
+                                ? "text-red-500"
+                                : "text-yellow-600"
+                            } hover:bg-gray-100`}
+                            onClick={() => setExpandedStock(expandedStock === stock.ticker ? null : stock.ticker)}
+                          >
+                            <span>{stock.ticker}</span>
+                            <span>{stock.percent > 0 ? "+" : ""}{stock.percent.toFixed(2)}%</span>
                           </div>
-                        )}
-                      </li>
-                    ))}
+                          {expandedStock === stock.ticker && (
+                            <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
+                              <p><strong>Name:</strong> {stock.name}</p>
+                              <p><strong>Price:</strong> {stock.price}</p>
+                              <p><strong>Summary:</strong> {stock.summary}</p>
+                              <p><strong>Risk Level:</strong> {stock.risk}</p>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </div>
