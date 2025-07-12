@@ -33,8 +33,8 @@
       const chartRef = useRef(null);
       const chartInstanceRef = useRef(null);
       const [stockData, setStockData] = useState([]);
+      const [showSplash, setShowSplash] = useState(true);
 
-      // Fetch real stock data from Alpha Vantage
       const fetchStocks = () => {
         Promise.all(symbols.map(async (sym) => {
           try {
@@ -46,17 +46,24 @@
               throw new Error(`Missing data for ${sym}`);
             }
 
+            const price = quote["05. price"];
+            const changeStr = quote["10. change percent"] || "0.00%";
+            const change = parseFloat(changeStr.replace('%', ''));
+            const marketClosed = change === 0;
+
             return {
               ticker: sym,
-              price: quote["05. price"],
-              change: parseFloat(quote["10. change percent"]) || 0
+              price,
+              change,
+              marketClosed
             };
           } catch (err) {
             console.warn("Stock data error:", sym, err);
             return {
               ticker: sym,
               price: "N/A",
-              change: 0
+              change: 0,
+              marketClosed: true
             };
           }
         }))
@@ -66,7 +73,7 @@
 
       useEffect(() => {
         fetchStocks();
-        const interval = setInterval(fetchStocks, 60000);
+        const interval = setInterval(fetchStocks, 10000);
         return () => clearInterval(interval);
       }, []);
 
@@ -119,7 +126,24 @@
       };
 
       return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="relative max-w-4xl mx-auto space-y-6">
+          {showSplash && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-lg max-w-lg p-6 text-center space-y-4">
+                <h2 className="text-2xl font-bold text-blue-600">👋 Welcome to Futurefolio!</h2>
+                <p className="text-gray-700 text-sm">
+                  Futurefolio is a guided investing app built for young learners. It helps you explore real-world finance through simulated stocks, educational tips, and fun goal tracking. Build your first portfolio, research companies, and learn how to grow your savings — all in a safe, kid-friendly environment!
+                </p>
+                <button
+                  onClick={() => setShowSplash(false)}
+                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Get Started
+                </button>
+              </div>
+            </div>
+          )}
+
           <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
 
           <div className="space-x-4">
@@ -160,7 +184,7 @@
                             <span>
                               {stock.price === "N/A"
                                 ? "N/A"
-                                : `$${parseFloat(stock.price).toFixed(2)} (${stock.change.toFixed(2)}%)`}
+                                : `$${parseFloat(stock.price).toFixed(2)} (${stock.change.toFixed(2)}%)${stock.marketClosed ? " - Market Closed" : ""}`}
                             </span>
                           </div>
                           {expandedStock === stock.ticker && (
@@ -168,6 +192,7 @@
                               <p><strong>Ticker:</strong> {stock.ticker}</p>
                               <p><strong>Price:</strong> {stock.price}</p>
                               <p><strong>Change:</strong> {stock.change.toFixed(2)}%</p>
+                              <p><strong>Status:</strong> {stock.marketClosed ? "Market Closed" : "Live"}</p>
                               <p><em>Data from Alpha Vantage</em></p>
                             </div>
                           )}
