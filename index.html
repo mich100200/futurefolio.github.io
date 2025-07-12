@@ -8,6 +8,9 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <!-- React + Babel -->
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
@@ -17,11 +20,57 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState } = React;
+    const { useState, useEffect, useRef } = React;
 
     function App() {
       const [tab, setTab] = useState("portfolio");
       const [expandedStock, setExpandedStock] = useState(null);
+      const [goalProgress, setGoalProgress] = useState(65);
+      const goalTotal = 200;
+      const chartRef = useRef(null);
+
+      const pieData = {
+        labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
+        datasets: [
+          {
+            data: [45, 25, 15, 10, 5],
+            backgroundColor: [
+              "#3B82F6", // Blue
+              "#10B981", // Green
+              "#F59E0B", // Yellow
+              "#EF4444", // Red
+              "#8B5CF6", // Purple
+            ],
+            borderWidth: 1,
+          },
+        ],
+      };
+
+      useEffect(() => {
+        if (chartRef.current) {
+          const ctx = chartRef.current.getContext("2d");
+          new Chart(ctx, {
+            type: "doughnut",
+            data: pieData,
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: "bottom" },
+                tooltip: {
+                  callbacks: {
+                    label: function (tooltipItem) {
+                      const total = pieData.datasets[0].data.reduce((a, b) => a + b, 0);
+                      const value = pieData.datasets[0].data[tooltipItem.dataIndex];
+                      const percent = ((value / total) * 100).toFixed(1);
+                      return `${pieData.labels[tooltipItem.dataIndex]}: ${percent}%`;
+                    },
+                  },
+                },
+              },
+            },
+          });
+        }
+      }, []);
 
       const stockData = [
         {
@@ -62,6 +111,16 @@
         },
       ];
 
+      const handleAddSavings = () => {
+        const input = prompt("How much would you like to add?");
+        const amount = parseFloat(input);
+        if (!isNaN(amount) && amount > 0) {
+          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
+        } else {
+          alert("Please enter a valid number greater than 0.");
+        }
+      };
+
       return (
         <div className="max-w-4xl mx-auto space-y-6">
           <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
@@ -90,9 +149,7 @@
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white shadow rounded p-4">
                   <h2 className="text-xl font-semibold mb-4">Current Holdings</h2>
-                  <div className="w-full h-48 bg-blue-100 flex items-center justify-center rounded">
-                    <span className="text-blue-800 font-semibold">[Pie Chart Placeholder]</span>
-                  </div>
+                  <canvas ref={chartRef} width="300" height="300" />
                 </div>
 
                 <div className="bg-white shadow rounded p-4">
@@ -137,6 +194,26 @@
                 <p className="mb-2">Answer a few questions to create your first investment plan.</p>
                 <button className="bg-blue-500 text-white px-4 py-2 rounded">
                   Start Setup
+                </button>
+              </div>
+
+              <div className="bg-white shadow rounded p-4 mt-6">
+                <h2 className="text-xl font-semibold mb-2">🎯 Shared Savings Goal</h2>
+                <p className="mb-1">Goal: Save $200 for college fund</p>
+                <div className="w-full bg-gray-200 h-4 rounded overflow-hidden mb-2">
+                  <div
+                    className="bg-green-500 h-full"
+                    style={{ width: `${(goalProgress / goalTotal) * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm mb-2">
+                  Progress: ${goalProgress.toFixed(2)} / ${goalTotal}
+                </p>
+                <button
+                  onClick={handleAddSavings}
+                  className="bg-green-600 text-white px-4 py-2 rounded"
+                >
+                  Add to Goal
                 </button>
               </div>
             </>
