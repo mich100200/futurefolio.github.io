@@ -26,9 +26,10 @@
       const [tab, setTab] = useState("portfolio");
       const [expandedStock, setExpandedStock] = useState(null);
       const [goalProgress, setGoalProgress] = useState(65);
+      const [showSplash, setShowSplash] = useState(true); // modal state
       const goalTotal = 200;
       const chartRef = useRef(null);
-      const chartInstanceRef = useRef(null); // Hold chart instance
+      const chartInstanceRef = useRef(null);
 
       const pieData = {
         labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
@@ -43,13 +44,11 @@
         ],
       };
 
-      // (Re)create chart when portfolio tab is active
       useEffect(() => {
         if (tab === "portfolio" && chartRef.current) {
           if (chartInstanceRef.current) {
-            chartInstanceRef.current.destroy(); // Destroy old chart
+            chartInstanceRef.current.destroy();
           }
-
           const ctx = chartRef.current.getContext("2d");
           chartInstanceRef.current = new Chart(ctx, {
             type: "doughnut",
@@ -92,7 +91,24 @@
       };
 
       return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="relative max-w-4xl mx-auto space-y-6">
+          {showSplash && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-lg max-w-lg p-6 text-center space-y-4">
+                <h2 className="text-2xl font-bold text-blue-600">👋 Welcome to Futurefolio!</h2>
+                <p className="text-gray-700 text-sm">
+                  Futurefolio is a guided investing app built for young learners. It helps you explore real-world finance through simulated stocks, educational tips, and fun goal tracking. Build your first portfolio, research companies, and learn how to grow your savings — all in a safe, kid-friendly environment!
+                </p>
+                <button
+                  onClick={() => setShowSplash(false)}
+                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Get Started
+                </button>
+              </div>
+            </div>
+          )}
+
           <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
 
           <div className="space-x-4">
