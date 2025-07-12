@@ -21,6 +21,46 @@
 
     function App() {
       const [tab, setTab] = useState("portfolio");
+      const [expandedStock, setExpandedStock] = useState(null);
+
+      const stockData = [
+        {
+          ticker: "AAPL",
+          change: "+3.2%",
+          status: "up",
+          name: "Apple Inc.",
+          price: "$191.57",
+          summary: "Leading tech company known for iPhones, Macs, and innovation.",
+          risk: "Low",
+        },
+        {
+          ticker: "TSLA",
+          change: "-1.8%",
+          status: "down",
+          name: "Tesla Inc.",
+          price: "$239.45",
+          summary: "Electric vehicle manufacturer and clean energy innovator.",
+          risk: "High",
+        },
+        {
+          ticker: "AMZN",
+          change: "+0.9%",
+          status: "up",
+          name: "Amazon.com Inc.",
+          price: "$132.76",
+          summary: "E-commerce and cloud computing giant.",
+          risk: "Medium",
+        },
+        {
+          ticker: "GOOG",
+          change: "0.0%",
+          status: "neutral",
+          name: "Alphabet Inc.",
+          price: "$122.03",
+          summary: "Parent company of Google and major digital ad player.",
+          risk: "Medium",
+        },
+      ];
 
       return (
         <div className="max-w-4xl mx-auto space-y-6">
@@ -58,10 +98,36 @@
                 <div className="bg-white shadow rounded p-4">
                   <h2 className="text-xl font-semibold mb-4">Stock Performance</h2>
                   <ul className="space-y-2">
-                    <li className="text-green-600">AAPL - Up 3.2%</li>
-                    <li className="text-red-500">TSLA - Down 1.8%</li>
-                    <li className="text-green-600">AMZN - Up 0.9%</li>
-                    <li className="text-yellow-500">GOOG - No change</li>
+                    {stockData.map((stock) => (
+                      <li key={stock.ticker}>
+                        <div
+                          className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${
+                            stock.status === "up"
+                              ? "text-green-600"
+                              : stock.status === "down"
+                              ? "text-red-500"
+                              : "text-yellow-600"
+                          } hover:bg-gray-100`}
+                          onClick={() =>
+                            setExpandedStock(
+                              expandedStock === stock.ticker ? null : stock.ticker
+                            )
+                          }
+                        >
+                          <span>{stock.ticker}</span>
+                          <span>{stock.change}</span>
+                        </div>
+
+                        {expandedStock === stock.ticker && (
+                          <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
+                            <p><strong>Name:</strong> {stock.name}</p>
+                            <p><strong>Price:</strong> {stock.price}</p>
+                            <p><strong>Summary:</strong> {stock.summary}</p>
+                            <p><strong>Risk Level:</strong> {stock.risk}</p>
+                          </div>
+                        )}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               </div>
