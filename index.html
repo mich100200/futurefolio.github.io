@@ -2,16 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Futurefolio – Dashboard</title>
+  <title>Futurefolio – Live Stocks</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <!-- Tailwind CSS -->
+
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- React + Babel -->
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -21,187 +16,64 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
+    const API_KEY = 'T4QNXPY9XE3NOAI3'; // 🔑 your API key
 
     function App() {
+      const symbols = ['AAPL','TSLA','AMZN','GOOG'];
+      const [stockData, setStockData] = useState([]);
       const [tab, setTab] = useState("portfolio");
-      const [expandedStock, setExpandedStock] = useState(null);
-      const [goalProgress, setGoalProgress] = useState(65);
-      const [showSplash, setShowSplash] = useState(true);
-      const [stocks, setStocks] = useState([
-        { ticker: "AAPL", percent: 3.2, name: "Apple Inc.", price: "$191.57", summary: "Leading tech company known for iPhones, Macs, and innovation.", risk: "Low" },
-        { ticker: "TSLA", percent: -1.8, name: "Tesla Inc.", price: "$239.45", summary: "Electric vehicle manufacturer and clean energy innovator.", risk: "High" },
-        { ticker: "AMZN", percent: 0.9, name: "Amazon.com Inc.", price: "$132.76", summary: "E-commerce and cloud computing giant.", risk: "Medium" },
-        { ticker: "GOOG", percent: 0.0, name: "Alphabet Inc.", price: "$122.03", summary: "Parent company of Google and major digital ad player.", risk: "Medium" },
-      ]);
-      const goalTotal = 200;
-      const chartRef = useRef(null);
-      const chartInstanceRef = useRef(null);
+      const [expanded, setExpanded] = useState(null);
+      const chartRef = useRef();
+      const chartInstance = useRef();
 
-      // Random stock flow every 5 seconds
+      // Fetch live stock quotes
+      const fetchStocks = () => {
+        Promise.all(symbols.map(sym =>
+          fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${sym}&apikey=${API_KEY}`)
+            .then(r => r.json())
+            .then(js => ({
+              ticker: sym,
+              price: js['Global Quote']['05. price'],
+              change: parseFloat(js['Global Quote']['10. change percent'])
+            }))
+        ))
+        .then(data => setStockData(data))
+        .catch(e => console.error('Error loading stock data', e));
+      };
+
       useEffect(() => {
-        const interval = setInterval(() => {
-          setStocks((prev) =>
-            prev.map((stock) => {
-              let change = (Math.random() * 0.5 - 0.25).toFixed(2); // range -0.25 to +0.25
-              let newPercent = parseFloat(stock.percent) + parseFloat(change);
-              return { ...stock, percent: parseFloat(newPercent.toFixed(2)) };
-            })
-          );
-        }, 5000);
-        return () => clearInterval(interval);
+        fetchStocks();
+        const iv = setInterval(fetchStocks, 60000); // refresh every 60s
+        return () => clearInterval(iv);
       }, []);
 
-      // Pie Chart
-      const pieData = {
-        labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
-        datasets: [
-          {
-            data: [45, 25, 15, 10, 5],
-            backgroundColor: ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"],
-            borderWidth: 1,
-          },
-        ],
-      };
-
-      useEffect(() => {
-        if (tab === "portfolio" && chartRef.current) {
-          if (chartInstanceRef.current) chartInstanceRef.current.destroy();
-          const ctx = chartRef.current.getContext("2d");
-          chartInstanceRef.current = new Chart(ctx, {
-            type: "doughnut",
-            data: pieData,
-            options: {
-              responsive: true,
-              plugins: {
-                legend: { position: "bottom" },
-                tooltip: {
-                  callbacks: {
-                    label: function (tooltipItem) {
-                      const total = pieData.datasets[0].data.reduce((a, b) => a + b, 0);
-                      const value = pieData.datasets[0].data[tooltipItem.dataIndex];
-                      const percent = ((value / total) * 100).toFixed(1);
-                      return `${pieData.labels[tooltipItem.dataIndex]}: ${percent}%`;
-                    },
-                  },
-                },
-              },
-            },
-          });
-        }
-      }, [tab]);
-
-      const handleAddSavings = () => {
-        const input = prompt("How much would you like to add?");
-        const amount = parseFloat(input);
-        if (!isNaN(amount) && amount > 0) {
-          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
-        } else {
-          alert("Please enter a valid number greater than 0.");
-        }
-      };
-
       return (
-        <div className="relative max-w-4xl mx-auto space-y-6">
-          {showSplash && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl shadow-lg max-w-lg p-6 text-center space-y-4">
-                <h2 className="text-2xl font-bold text-blue-600">👋 Welcome to Futurefolio!</h2>
-                <p className="text-gray-700 text-sm">
-                  Futurefolio is a guided investing app built for young learners. It helps you explore real-world finance through simulated stocks, educational tips, and fun goal tracking. Build your first portfolio, research companies, and learn how to grow your savings — all in a safe, kid-friendly environment!
-                </p>
-                <button onClick={() => setShowSplash(false)} className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                  Get Started
-                </button>
-              </div>
-            </div>
-          )}
-
-          <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
-
+        <div className="max-w-4xl mx-auto space-y-6">
           <div className="space-x-4">
-            <button className={`px-4 py-2 rounded ${tab === "portfolio" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("portfolio")}>
+            <button onClick={() => setTab("portfolio")} 
+              className={`px-4 py-2 rounded ${tab==="portfolio" ? "bg-blue-500 text-white":"bg-gray-300"}`}>
               My Portfolio
             </button>
-            <button className={`px-4 py-2 rounded ${tab === "news" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("news")}>
+            <button onClick={() => setTab("news")} 
+              className={`px-4 py-2 rounded ${tab==="news" ? "bg-blue-500 text-white":"bg-gray-300"}`}>
               Daily News
             </button>
           </div>
 
           {tab === "portfolio" && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white shadow rounded p-4">
-                  <h2 className="text-xl font-semibold mb-4">Current Holdings</h2>
-                  <canvas ref={chartRef} width="300" height="300" />
-                </div>
-
-                <div className="bg-white shadow rounded p-4">
-                  <h2 className="text-xl font-semibold mb-4">Stock Performance</h2>
-                  <ul className="space-y-2">
-                    {stocks.map((stock) => {
-                      let status = stock.percent > 0 ? "up" : stock.percent < 0 ? "down" : "neutral";
-                      return (
-                        <li key={stock.ticker}>
-                          <div
-                            className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${
-                              status === "up"
-                                ? "text-green-600"
-                                : status === "down"
-                                ? "text-red-500"
-                                : "text-yellow-600"
-                            } hover:bg-gray-100`}
-                            onClick={() => setExpandedStock(expandedStock === stock.ticker ? null : stock.ticker)}
-                          >
-                            <span>{stock.ticker}</span>
-                            <span>{stock.percent > 0 ? "+" : ""}{stock.percent.toFixed(2)}%</span>
-                          </div>
-                          {expandedStock === stock.ticker && (
-                            <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
-                              <p><strong>Name:</strong> {stock.name}</p>
-                              <p><strong>Price:</strong> {stock.price}</p>
-                              <p><strong>Summary:</strong> {stock.summary}</p>
-                              <p><strong>Risk Level:</strong> {stock.risk}</p>
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              </div>
-
-              <div className="bg-white shadow rounded p-4 mt-6">
-                <h2 className="text-xl font-semibold mb-4">My First Portfolio Wizard</h2>
-                <p className="mb-2">Answer a few questions to create your first investment plan.</p>
-                <button className="bg-blue-500 text-white px-4 py-2 rounded">Start Setup</button>
-              </div>
-
-              <div className="bg-white shadow rounded p-4 mt-6">
-                <h2 className="text-xl font-semibold mb-2">🎯 Shared Savings Goal</h2>
-                <p className="mb-1">Goal: Save $200 for college fund</p>
-                <div className="w-full bg-gray-200 h-4 rounded overflow-hidden mb-2">
-                  <div className="bg-green-500 h-full" style={{ width: `${(goalProgress / goalTotal) * 100}%` }}></div>
-                </div>
-                <p className="text-sm mb-2">Progress: ${goalProgress.toFixed(2)} / ${goalTotal}</p>
-                <button onClick={handleAddSavings} className="bg-green-600 text-white px-4 py-2 rounded">Add to Goal</button>
-              </div>
-            </>
-          )}
-
-          {tab === "news" && (
-            <div className="bg-white shadow rounded p-4">
-              <h2 className="text-xl font-semibold mb-4">Today's Headlines</h2>
-              <ul className="space-y-2">
-                <li>📊 Tech sector rebounds after dip</li>
-                <li>🛢️ Oil prices stabilize</li>
-                <li>🛒 Retail stocks show upward trend</li>
+              <canvas ref={chartRef} width="300" height="300"/>
+              <ul>
+                {stockData.map(s => (
+                  <li key={s.ticker}>
+                    <div className="cursor-pointer" onClick={()=>setExpanded(expanded===s.ticker?null:s.ticker)}>
+                      {s.ticker}: ${parseFloat(s.price).toFixed(2)} ({s.change?.toFixed(2)}%)
+                    </div>
+                    {expanded===s.ticker && <div>Detailed info...</div>}
+                  </li>
+                ))}
               </ul>
-              <div className="mt-4">
-                <p className="font-medium">🧠 Quick Poll:</p>
-                <p className="mb-2">Which sector is booming today?</p>
-                <input className="border px-2 py-1 rounded w-full" placeholder="Type your answer..." />
-              </div>
-            </div>
+            </>
           )}
         </div>
       );
