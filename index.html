@@ -2,15 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Futurefolio – Dashboard</title>
+  <title>Futurefolio – Parent Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <!-- React + Babel -->
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
@@ -33,7 +31,6 @@
       const chartRef = useRef(null);
       const chartInstanceRef = useRef(null);
       const [stockData, setStockData] = useState([]);
-      const [showSplash, setShowSplash] = useState(true);
 
       const fetchStocks = () => {
         Promise.all(symbols.map(async (sym) => {
@@ -126,25 +123,11 @@
       };
 
       return (
-        <div className="relative max-w-4xl mx-auto space-y-6">
-          {showSplash && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl shadow-lg max-w-lg p-6 text-center space-y-4">
-                <h2 className="text-2xl font-bold text-blue-600">👋 Welcome to Futurefolio!</h2>
-                <p className="text-gray-700 text-sm">
-                  Futurefolio is a guided investing app built for young learners. It helps you explore real-world finance through simulated stocks, educational tips, and fun goal tracking. Build your first portfolio, research companies, and learn how to grow your savings — all in a safe, kid-friendly environment!
-                </p>
-                <button
-                  onClick={() => setShowSplash(false)}
-                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                >
-                  Get Started
-                </button>
-              </div>
-            </div>
-          )}
-
-          <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
+            <a href="child.html" className="text-sm text-blue-600 underline">🔁 Switch to Child View</a>
+          </div>
 
           <div className="space-x-4">
             <button className={`px-4 py-2 rounded ${tab === "portfolio" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("portfolio")}>My Portfolio</button>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Futurefolio – Child Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-blue-50 p-6 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    function ChildApp() {
+      const [tab, setTab] = useState("home");
+      const [quizAnswer, setQuizAnswer] = useState("");
+      const [quizResult, setQuizResult] = useState(null);
+
+      const checkQuiz = () => {
+        if (quizAnswer.toLowerCase().includes("save")) {
+          setQuizResult("✅ That's right! Saving is smart.");
+        } else {
+          setQuizResult("❌ Try again! Think about keeping money for later.");
+        }
+      };
+
+      return (
+        <div className="max-w-3xl mx-auto space-y-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-blue-700">👧 Futurefolio – My Fun Finance</h1>
+            <a href="index.html" className="text-sm text-blue-600 underline">🔁 Switch to Parent View</a>
+          </div>
+
+          <div className="flex justify-center space-x-4">
+            <button onClick={() => setTab("home")} className={`px-4 py-2 rounded ${tab === "home" ? "bg-blue-500 text-white" : "bg-gray-200"}`}>🏠 Home</button>
+            <button onClick={() => setTab("money")} className={`px-4 py-2 rounded ${tab === "money" ? "bg-blue-500 text-white" : "bg-gray-200"}`}>💰 My Money</button>
+            <button onClick={() => setTab("learn")} className={`px-4 py-2 rounded ${tab === "learn" ? "bg-blue-500 text-white" : "bg-gray-200"}`}>📘 Learning</button>
+          </div>
+
+          {tab === "home" && (
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-purple-600">Hi there! 👋</h2>
+              <p className="mt-2 text-gray-700">This is your very own money dashboard! You can learn how to save, see your stocks, and read fun tips about money.</p>
+            </div>
+          )}
+
+          {tab === "money" && (
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-green-600">My Money</h2>
+              <p className="text-gray-800 mt-2">Here are your pretend stocks:</p>
+              <ul className="list-disc pl-6 mt-2">
+                <li>Apple 🍎 – Going up 📈</li>
+                <li>Tesla 🚗 – Going down 📉</li>
+                <li>Amazon 📦 – Not moving 🚫</li>
+              </ul>
+              <p className="mt-4">Keep an eye on these and learn what makes them change!</p>
+            </div>
+          )}
+
+          {tab === "learn" && (
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-indigo-600">💡 Learn About Money!</h2>
+              <p className="mt-2">Question: What is a smart thing to do with your money?</p>
+              <input
+                className="border px-3 py-1 mt-2 rounded w-full"
+                placeholder="Type your answer..."
+                value={quizAnswer}
+                onChange={(e) => setQuizAnswer(e.target.value)}
+              />
+              <button onClick={checkQuiz} className="mt-2 bg-blue-500 text-white px-4 py-2 rounded">Check Answer</button>
+              {quizResult && <p className="mt-2 font-semibold">{quizResult}</p>}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<ChildApp />, document.getElementById("root"));
+  </script>
+</body>
+</html>
