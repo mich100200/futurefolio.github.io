@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -24,12 +25,22 @@
       const goalTotal = 100;
       const [quizAnswer, setQuizAnswer] = useState(localStorage.getItem("quizAnswer") || null);
       const [avatar, setAvatar] = useState(localStorage.getItem("avatar") || "🐧");
+      const [celebrated, setCelebrated] = useState(false);
 
       useEffect(() => {
         localStorage.setItem("goalProgress", goalProgress);
         localStorage.setItem("quizAnswer", quizAnswer);
         localStorage.setItem("avatar", avatar);
-      }, [goalProgress, quizAnswer, avatar]);
+
+        if (goalProgress >= goalTotal && !celebrated) {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+          setCelebrated(true);
+        }
+      }, [goalProgress, quizAnswer, avatar, celebrated]);
 
       const handleAddSavings = () => {
         const input = prompt("How much would you like to add to your savings?");
