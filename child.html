@@ -1,4 +1,3 @@
-<!-- Full updated child view HTML with Learning tab -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,12 +18,43 @@
 
     function App() {
       const [tab, setTab] = useState("portfolio");
+      const [goalProgress, setGoalProgress] = useState(() => {
+        return parseFloat(localStorage.getItem("goalProgress")) || 50;
+      });
+      const goalTotal = 100;
+      const [quizAnswer, setQuizAnswer] = useState(localStorage.getItem("quizAnswer") || null);
+      const [avatar, setAvatar] = useState(localStorage.getItem("avatar") || "🐧");
+
+      useEffect(() => {
+        localStorage.setItem("goalProgress", goalProgress);
+        localStorage.setItem("quizAnswer", quizAnswer);
+        localStorage.setItem("avatar", avatar);
+      }, [goalProgress, quizAnswer, avatar]);
+
+      const handleAddSavings = () => {
+        const input = prompt("How much would you like to add to your savings?");
+        const amount = parseFloat(input);
+        if (!isNaN(amount) && amount > 0) {
+          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
+        } else {
+          alert("Please enter a valid number.");
+        }
+      };
+
+      const chooseAvatar = () => {
+        const options = ["🐧", "🦊", "🐼", "🦁", "🐵"];
+        const next = options[(options.indexOf(avatar) + 1) % options.length];
+        setAvatar(next);
+      };
 
       return (
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold">📚 Futurefolio for Kids</h1>
-            <a href="index.html" className="text-sm text-blue-600 underline">🔁 Switch to Parent View</a>
+            <h1 className="text-3xl font-bold">{avatar} Futurefolio for Kids</h1>
+            <div className="space-x-3">
+              <button onClick={chooseAvatar} className="text-sm text-purple-600 underline">🎭 Change Avatar</button>
+              <a href="index.html" className="text-sm text-blue-600 underline">🔁 Switch to Parent View</a>
+            </div>
           </div>
 
           <div className="space-x-4">
@@ -33,7 +63,7 @@
           </div>
 
           {tab === "portfolio" && (
-            <div className="bg-white shadow rounded p-4">
+            <div className="bg-white shadow rounded p-4 animate-fade-in">
               <h2 className="text-xl font-semibold mb-4">My Money Summary</h2>
               <p>Here you can see how your money is split up in different areas like tech, games, or stores.</p>
               <ul className="list-disc list-inside mt-4">
@@ -42,11 +72,20 @@
                 <li>💊 Health: $15</li>
                 <li>🔋 Energy: $10</li>
               </ul>
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold">🎯 Savings Goal</h3>
+                <p className="text-sm text-gray-600 mb-1">Goal: Save $100 for something awesome!</p>
+                <div className="w-full bg-gray-300 h-4 rounded">
+                  <div className="bg-green-500 h-full transition-all duration-500" style={{ width: `${(goalProgress / goalTotal) * 100}%` }}></div>
+                </div>
+                <p className="text-sm mt-1">Progress: ${goalProgress.toFixed(2)} / ${goalTotal}</p>
+                <button onClick={handleAddSavings} className="mt-2 bg-green-600 text-white px-4 py-1 rounded">Add to Savings</button>
+              </div>
             </div>
           )}
 
           {tab === "learning" && (
-            <div className="bg-white shadow rounded p-4">
+            <div className="bg-white shadow rounded p-4 animate-fade-in">
               <h2 className="text-xl font-semibold mb-4">💡 Let's Learn About Money!</h2>
 
               <div className="mb-6">
@@ -72,10 +111,15 @@
                 <h3 className="text-lg font-semibold">🧠 Quiz Time!</h3>
                 <p>Which of these is a smart way to save money?</p>
                 <ul className="mt-2">
-                  <li><input type="radio" name="quiz1" /> Spend all your money on candy</li>
-                  <li><input type="radio" name="quiz1" /> Put some in a savings jar 🏦</li>
-                  <li><input type="radio" name="quiz1" /> Give it to your dog 🐶</li>
+                  <li><label><input type="radio" name="quiz1" checked={quizAnswer === "wrong1"} onChange={() => setQuizAnswer("wrong1")} /> Spend all your money on candy</label></li>
+                  <li><label><input type="radio" name="quiz1" checked={quizAnswer === "correct"} onChange={() => setQuizAnswer("correct")} /> Put some in a savings jar 🏦</label></li>
+                  <li><label><input type="radio" name="quiz1" checked={quizAnswer === "wrong2"} onChange={() => setQuizAnswer("wrong2")} /> Give it to your dog 🐶</label></li>
                 </ul>
+                {quizAnswer && (
+                  <div className={`mt-2 p-2 rounded ${quizAnswer === "correct" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                    {quizAnswer === "correct" ? "✅ Great job! That’s a smart choice!" : "❌ Hmm... try again. Think about saving for something important!"}
+                  </div>
+                )}
               </div>
             </div>
           )}
