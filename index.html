@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Futurefolio – Parent Dashboard</title>
+  <title>Financial Litmus</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- Tailwind CSS -->
@@ -27,10 +27,10 @@
       return (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 max-w-lg text-center">
-            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Futurefolio</h2>
+            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Financial Litmus!</h2>
             <p className="mb-4 text-gray-700">
-              Futurefolio helps young learners and their parents explore real-world investing in a safe, educational environment.
-              You’ll see portfolio tools, savings goals, and live stock data in one place!
+              Financial Litmus helps learners explore real-world investing in a safe, educational environment. The data pulls from real market information using the prior week's data to curate a realistic perspective.
+              You’ll see portfolio tools, financial goals, and live stock data in one place!
             </p>
             <button onClick={onClose} className="bg-blue-500 text-white px-4 py-2 rounded">Let’s Go!</button>
           </div>
@@ -143,8 +143,7 @@
           {showSplash && <SplashModal onClose={() => setShowSplash(false)} />}
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
-              <h1 className="text-3xl font-bold">📈 Futurefolio Dashboard</h1>
-              <a href="child.html" className="text-sm text-blue-600 underline">🔁 Switch to Child View</a>
+              <h1 className="text-3xl font-bold">📈 The Litmus Dashboard</h1>
             </div>
 
             <div className="space-x-4">
