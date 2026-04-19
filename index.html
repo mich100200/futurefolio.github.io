@@ -4,12 +4,8 @@
   <meta charset="UTF-8" />
   <title>Financial Litmus</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- React + Babel -->
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,202 +16,1052 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const API_KEY = 'T4QNXPY9XE3NOAI3';
-    const symbols = ['AAPL', 'TSLA', 'AMZN', 'GOOG'];
+    const LIVE_API_KEY = 'T4QNXPY9XE3NOAI3';
 
-    function SplashModal({ onClose }) {
+    const FSES_QUESTIONS = [
+      "I feel confident in my ability to manage market risk.",
+      "I understand how different asset classes perform during economic downturns.",
+      "I can make investment decisions without relying entirely on professional advice."
+    ];
+
+
+    const scenarios = [
+      {
+        id: 1,
+        icon: '🏦',
+        theme: 'red',
+        title: 'The Credit Collapse',
+        teaser: 'Major banks are insolvent. Credit markets have frozen. A global financial meltdown is underway.',
+        description: 'Major financial institutions are reporting catastrophic losses tied to mortgage-backed securities. Credit markets are freezing and several large banks are on the verge of insolvency. Government bailout talks are underway as unemployment begins to surge.',
+        period: 'Late 2008',
+        indicators: [
+          { label: 'Market Volatility (VIX)', value: '80 — Extreme Fear',    color: 'bg-red-100 text-red-700' },
+          { label: 'GDP Outlook',             value: 'Sharply Contracting',   color: 'bg-red-100 text-red-700' },
+          { label: 'Credit Markets',          value: 'Effectively Frozen',    color: 'bg-red-100 text-red-700' },
+          { label: 'Unemployment',            value: 'Rising Rapidly',        color: 'bg-orange-100 text-orange-700' },
+        ],
+        assets: [
+          { key: 'index',    label: 'Broad Market Index',   desc: 'Diversified large-cap equity', outcome: -16.9 },
+          { key: 'bonds',    label: 'Treasury Bonds',       desc: 'U.S. government debt',         outcome:   3.5 },
+          { key: 'cash',     label: 'Cash',                 desc: 'No risk, no return',           outcome:   0.0 },
+          { key: 'gold',     label: 'Gold',                 desc: 'Commodity safe-haven',         outcome:   2.0 },
+          { key: 'intl',     label: 'International Stocks', desc: 'Global ex-US equities',        outcome: -19.0 },
+          { key: 'reits',    label: 'Real Estate (REITs)',  desc: 'Property-backed securities',   outcome: -22.0 },
+          { key: 'smallcap', label: 'Small Cap Stocks',     desc: 'Domestic small companies',     outcome: -20.5 },
+        ],
+        explanation: 'The 2008 financial crisis triggered a global credit crunch. Assets tied to real estate (REITs) and leveraged small companies collapsed hardest. U.S. Treasuries and gold surged as investors fled to safety — a classic "flight to quality."',
+      },
+      {
+        id: 2,
+        icon: '🦠',
+        theme: 'orange',
+        title: 'Global Health Emergency',
+        teaser: 'A fast-spreading virus is forcing global lockdowns. Economic forecasts are being slashed overnight.',
+        description: 'A novel virus is spreading rapidly across continents. Governments are implementing lockdowns, grounding flights, and declaring national emergencies. Consumer activity has collapsed and economic forecasts are being revised sharply downward.',
+        period: 'Early 2020',
+        indicators: [
+          { label: 'Market Volatility (VIX)', value: '65 — Extreme Fear',    color: 'bg-red-100 text-red-700' },
+          { label: 'Consumer Sentiment',      value: 'Plummeting',           color: 'bg-red-100 text-red-700' },
+          { label: 'Global Travel',           value: 'Near Complete Halt',   color: 'bg-red-100 text-red-700' },
+          { label: 'Earnings Forecasts',      value: 'Broadly Cut',          color: 'bg-orange-100 text-orange-700' },
+        ],
+        assets: [
+          { key: 'index',    label: 'Broad Market Index',   desc: 'Diversified large-cap equity', outcome: -12.5 },
+          { key: 'bonds',    label: 'Treasury Bonds',       desc: 'U.S. government debt',         outcome:   1.2 },
+          { key: 'cash',     label: 'Cash',                 desc: 'No risk, no return',           outcome:   0.0 },
+          { key: 'gold',     label: 'Gold',                 desc: 'Commodity safe-haven',         outcome:   3.1 },
+          { key: 'intl',     label: 'International Stocks', desc: 'Global ex-US equities',        outcome:  -9.8 },
+          { key: 'reits',    label: 'Real Estate (REITs)',  desc: 'Property-backed securities',   outcome: -15.2 },
+          { key: 'smallcap', label: 'Small Cap Stocks',     desc: 'Domestic small companies',     outcome: -18.4 },
+        ],
+        explanation: "COVID-19's sudden shutdown crushed equities broadly. REITs and small caps were hit hardest due to commercial real estate exposure and thin liquidity. Gold and bonds served as safe havens. International markets fared slightly better because some regions had earlier virus peaks.",
+      },
+      {
+        id: 3,
+        icon: '📈',
+        theme: 'yellow',
+        title: 'The Inflation Shock',
+        teaser: 'Inflation hits a 40-year high. The central bank is raising rates at the fastest pace in decades.',
+        description: 'Inflation has reached a 40-year high driven by supply chain disruptions and excess stimulus. The central bank is aggressively raising interest rates to cool the economy. Both growth stocks and long-duration bonds are under intense pressure.',
+        period: 'Mid 2022',
+        indicators: [
+          { label: 'Inflation (CPI)',  value: '9.1% — 40-Year High', color: 'bg-red-100 text-red-700' },
+          { label: 'Interest Rates',  value: 'Rising at Record Pace', color: 'bg-red-100 text-red-700' },
+          { label: 'Consumer Spending', value: 'Weakening',           color: 'bg-orange-100 text-orange-700' },
+          { label: 'Dollar Strength', value: 'Surging',               color: 'bg-yellow-100 text-yellow-700' },
+        ],
+        assets: [
+          { key: 'index',    label: 'Broad Market Index',   desc: 'Diversified large-cap equity',   outcome:  -8.3 },
+          { key: 'bonds',    label: 'Treasury Bonds',       desc: 'U.S. government debt',           outcome:  -5.2 },
+          { key: 'cash',     label: 'Cash',                 desc: 'Earning yield from rate hikes',  outcome:   0.3 },
+          { key: 'gold',     label: 'Gold',                 desc: 'Commodity safe-haven',           outcome:  -2.5 },
+          { key: 'intl',     label: 'International Stocks', desc: 'Global ex-US equities',          outcome:  -6.1 },
+          { key: 'reits',    label: 'Real Estate (REITs)',  desc: 'Property-backed securities',     outcome:  -7.8 },
+          { key: 'smallcap', label: 'Small Cap Stocks',     desc: 'Domestic small companies',       outcome:  -9.2 },
+        ],
+        explanation: 'The 2022 inflation shock was historically unusual: both stocks AND bonds fell simultaneously. Rising interest rates make existing bonds less valuable. Gold underperformed as a surging dollar weakened commodity prices. Cash was the rare winner as money market yields finally rose.',
+      },
+      {
+        id: 4,
+        icon: '⭐',
+        theme: 'blue',
+        title: "America's Credit Downgrade",
+        teaser: "The U.S. loses its AAA credit rating for the first time ever. Markets are in shock.",
+        description: 'For the first time in history, the United States has had its AAA credit rating downgraded after a bitter debt ceiling standoff in Congress. Global confidence in U.S. fiscal policy is shaken. European sovereign debt is simultaneously under fire.',
+        period: 'Mid 2011',
+        indicators: [
+          { label: 'U.S. Credit Rating',    value: 'Downgraded to AA+',  color: 'bg-red-100 text-red-700' },
+          { label: 'Political Uncertainty', value: 'Extremely High',      color: 'bg-red-100 text-red-700' },
+          { label: 'European Debt Crisis',  value: 'Actively Spreading',  color: 'bg-orange-100 text-orange-700' },
+          { label: 'Dollar Confidence',     value: 'Under Pressure',      color: 'bg-yellow-100 text-yellow-700' },
+        ],
+        assets: [
+          { key: 'index',    label: 'Broad Market Index',   desc: 'Diversified large-cap equity', outcome:  -5.7 },
+          { key: 'bonds',    label: 'Treasury Bonds',       desc: 'U.S. government debt',         outcome:   4.2 },
+          { key: 'cash',     label: 'Cash',                 desc: 'No risk, no return',           outcome:   0.0 },
+          { key: 'gold',     label: 'Gold',                 desc: 'Commodity safe-haven',         outcome:  12.0 },
+          { key: 'intl',     label: 'International Stocks', desc: 'Global ex-US equities',        outcome:  -7.3 },
+          { key: 'reits',    label: 'Real Estate (REITs)',  desc: 'Property-backed securities',   outcome:  -6.5 },
+          { key: 'smallcap', label: 'Small Cap Stocks',     desc: 'Domestic small companies',     outcome:  -8.8 },
+        ],
+        explanation: "Paradoxically, after the U.S. credit downgrade, investors still fled TO U.S. Treasuries — because there was simply no better alternative globally. Gold surged 12% to a new all-time high as the ultimate safe haven. This scenario teaches that the 'obvious' trade isn't always the correct one.",
+      },
+      {
+        id: 5,
+        icon: '🌏',
+        theme: 'purple',
+        title: 'Emerging Market Turbulence',
+        teaser: "China's stock market has lost 30% in weeks. Commodity prices are collapsing worldwide.",
+        description: "China's stock market has lost over 30% in just a few weeks. Government intervention has failed to restore confidence. Commodity prices are crashing as global growth fears spread and emerging markets are experiencing rapid capital outflows.",
+        period: 'Mid 2015',
+        indicators: [
+          { label: 'Chinese Equities',   value: '-30% in Weeks',         color: 'bg-red-100 text-red-700' },
+          { label: 'Commodity Prices',   value: 'Collapsing Broadly',    color: 'bg-red-100 text-red-700' },
+          { label: 'Emerging Markets',   value: 'Rapid Capital Flight',  color: 'bg-red-100 text-red-700' },
+          { label: 'Global Growth',      value: 'Outlook Downgraded',    color: 'bg-orange-100 text-orange-700' },
+        ],
+        assets: [
+          { key: 'index',    label: 'Broad Market Index',   desc: 'Diversified large-cap equity', outcome:  -6.3 },
+          { key: 'bonds',    label: 'Treasury Bonds',       desc: 'U.S. government debt',         outcome:   1.8 },
+          { key: 'cash',     label: 'Cash',                 desc: 'No risk, no return',           outcome:   0.0 },
+          { key: 'gold',     label: 'Gold',                 desc: 'Commodity safe-haven',         outcome:  -0.5 },
+          { key: 'intl',     label: 'International Stocks', desc: 'Global ex-US equities',        outcome:  -9.2 },
+          { key: 'reits',    label: 'Real Estate (REITs)',  desc: 'Property-backed securities',   outcome:  -4.2 },
+          { key: 'smallcap', label: 'Small Cap Stocks',     desc: 'Domestic small companies',     outcome:  -7.8 },
+        ],
+        explanation: "China's crash hit international stocks hardest due to global trade exposure. Gold — typically a safe haven — failed to rally because falling commodity prices weighed on it directly. U.S. Treasuries offered the best protection, highlighting how a crisis originating abroad can still make domestic bonds attractive.",
+      },
+    ];
+
+    // ── Reusable Chart component ───────────────────────────────────────────────
+    function HorizontalBarChart({ id, labels, data, colors, xLabel }) {
+      const canvasRef = useRef(null);
+      const chartRef  = useRef(null);
+
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: {
+                title: { display: !!xLabel, text: xLabel },
+                ticks: { callback: v => v + '%' },
+              },
+            },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [id]);
+
+      return <canvas ref={canvasRef} />;
+    }
+
+    // ── FSES Assessment Modal ──────────────────────────────────────────────────
+    function AssessmentModal({ onClose }) {
+      const [answers, setAnswers] = useState({ q1: 0, q2: 0, q3: 0 });
+      const keys = ['q1', 'q2', 'q3'];
+      const allAnswered = keys.every(k => answers[k] > 0);
+
       return (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-lg text-center">
-            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Financial Litmus!</h2>
-            <p className="mb-4 text-gray-700">
-              Financial Litmus helps learners explore real-world investing in a safe, educational environment. The data pulls from real market information using the prior week's data to curate a realistic perspective.
-              You’ll see portfolio tools, financial goals, and live stock data in one place!
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Financial Litmus</h2>
+            <p className="mb-6 text-gray-600 text-sm">
+              Before you begin, please answer three brief questions about your financial confidence.
+              There are no right or wrong answers — this helps personalize your experience.
             </p>
-            <button onClick={onClose} className="bg-blue-500 text-white px-4 py-2 rounded">Let’s Go!</button>
+            {FSES_QUESTIONS.map((q, i) => (
+              <div key={i} className="mb-5">
+                <p className="text-sm font-medium text-gray-800 mb-2">{i + 1}. {q}</p>
+                <div className="flex gap-2 justify-between">
+                  {[1, 2, 3, 4, 5].map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setAnswers(prev => ({ ...prev, [keys[i]]: v }))}
+                      className={`w-10 h-10 rounded-full text-sm font-semibold border-2 transition-all ${
+                        answers[keys[i]] === v ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>Strongly Disagree</span><span>Strongly Agree</span>
+                </div>
+              </div>
+            ))}
+            <button
+              onClick={() => { const avg = (answers.q1 + answers.q2 + answers.q3) / 3; onClose(avg); }}
+              disabled={!allAnswered}
+              className={`w-full mt-2 py-2 rounded font-semibold transition-all ${allAnswered ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+            >
+              Start Simulation
+            </button>
           </div>
         </div>
       );
     }
 
-    function App() {
-      const [showSplash, setShowSplash] = useState(true);
-      const [tab, setTab] = useState("portfolio");
-      const [expandedStock, setExpandedStock] = useState(null);
-      const [goalProgress, setGoalProgress] = useState(65);
-      const goalTotal = 200;
-      const chartRef = useRef(null);
-      const chartInstanceRef = useRef(null);
-      const [stockData, setStockData] = useState([]);
+    // ── Confidence Modal ───────────────────────────────────────────────────────
+    function ConfidenceModal({ onSubmit }) {
+      const [confidence, setConfidence] = useState(5);
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
+            <h2 className="text-xl font-bold mb-3 text-blue-600">Before You See the Results</h2>
+            <p className="text-gray-700 mb-6">On a scale of 1–10, how confident are you that this allocation will preserve or grow your wealth over the next month?</p>
+            <div className="mb-2">
+              <span className="text-4xl font-bold text-blue-500">{confidence}</span>
+              <span className="text-gray-400 text-sm"> / 10</span>
+            </div>
+            <input type="range" min="1" max="10" value={confidence} onChange={e => setConfidence(Number(e.target.value))} className="w-full mb-2 accent-blue-500" />
+            <div className="flex justify-between text-xs text-gray-400 mb-6">
+              <span>Not confident at all</span><span>Extremely confident</span>
+            </div>
+            <button onClick={() => onSubmit(confidence)} className="w-full bg-blue-500 text-white py-2 rounded font-semibold hover:bg-blue-600">
+              Submit &amp; See Results
+            </button>
+          </div>
+        </div>
+      );
+    }
 
-      const fetchStocks = () => {
-        Promise.all(symbols.map(async (sym) => {
-          try {
-            const res = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${sym}&apikey=${API_KEY}`);
-            const json = await res.json();
-            const quote = json["Global Quote"];
+    // ── Scenario Picker ────────────────────────────────────────────────────────
+    function ScenarioPicker({ onSelect, completedIds }) {
+      const themeRing = { red: 'hover:border-red-400', orange: 'hover:border-orange-400', yellow: 'hover:border-yellow-400', blue: 'hover:border-blue-400', purple: 'hover:border-purple-400' };
+      const themeBg   = { red: 'bg-red-50', orange: 'bg-orange-50', yellow: 'bg-yellow-50', blue: 'bg-blue-50', purple: 'bg-purple-50' };
+      return (
+        <div className="bg-white shadow rounded p-6">
+          <h2 className="text-xl font-bold mb-1">Choose a Historical Scenario</h2>
+          <p className="text-gray-500 text-sm mb-5">Each scenario is based on a real market event from the last 25 years. Dates are revealed after you submit your allocation.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {scenarios.map(s => {
+              const done = completedIds.includes(s.id);
+              return done ? (
+                <div
+                  key={s.id}
+                  className="border-2 border-gray-200 rounded-lg p-4 text-left bg-gray-100 opacity-50 cursor-not-allowed relative"
+                >
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">✓ Done</div>
+                  <div className="text-3xl mb-2 grayscale">{s.icon}</div>
+                  <p className="font-bold text-sm text-gray-400 mb-1">{s.title}</p>
+                  <p className="text-xs text-gray-400 leading-snug">{s.teaser}</p>
+                </div>
+              ) : (
+                <button
+                  key={s.id}
+                  onClick={() => onSelect(s)}
+                  className={`border-2 border-gray-200 rounded-lg p-4 text-left transition-all ${themeRing[s.theme]} ${themeBg[s.theme]} hover:shadow-md`}
+                >
+                  <div className="text-3xl mb-2">{s.icon}</div>
+                  <p className="font-bold text-sm text-gray-800 mb-1">{s.title}</p>
+                  <p className="text-xs text-gray-500 leading-snug">{s.teaser}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
 
-            if (!quote || !quote["05. price"]) {
-              throw new Error(`Missing data for ${sym}`);
-            }
+    // ── Simulation Tab (Historical) ────────────────────────────────────────────
+    function SimulationTab({ baselineFSES, completedIds, onComplete }) {
+      const [scenario, setScenario]     = useState(null);
+      const [allocation, setAllocation] = useState({});
+      const [phase, setPhase]           = useState('pick'); // pick | allocate | confidence | results
+      const [confidence, setConfidence] = useState(5);
 
-            const price = quote["05. price"];
-            const changeStr = quote["10. change percent"] || "0.00%";
-            const change = parseFloat(changeStr.replace('%', ''));
-            const marketClosed = change === 0;
-
-            return {
-              ticker: sym,
-              price,
-              change,
-              marketClosed
-            };
-          } catch (err) {
-            console.warn("Stock data error:", sym, err);
-            return {
-              ticker: sym,
-              price: "N/A",
-              change: 0,
-              marketClosed: true
-            };
-          }
-        }))
-        .then(data => setStockData(data))
-        .catch((err) => console.error("Overall stock fetch failed", err));
+      const handleSelectScenario = (s) => {
+        setScenario(s);
+        setAllocation(Object.fromEntries(s.assets.map(a => [a.key, 0])));
+        setPhase('allocate');
       };
 
+      const handleReset = () => { setScenario(null); setAllocation({}); setPhase('pick'); setConfidence(5); };
+
+      const total     = Object.values(allocation).reduce((s, v) => s + v, 0);
+      const isValid   = total === 1000;
+      const remaining = 1000 - total;
+
+      const calcResults = (conf) => {
+        let weightedReturn = 0;
+        scenario.assets.forEach(a => { weightedReturn += (allocation[a.key] / 1000) * a.outcome; });
+        let competenceScore = weightedReturn > 0 ? 9 : weightedReturn > -3 ? 5 : weightedReturn > -7 ? 3 : 1;
+        return { returnPct: weightedReturn, competenceScore, clgScore: Math.abs(conf - competenceScore) };
+      };
+
+      if (phase === 'pick') return <ScenarioPicker onSelect={handleSelectScenario} completedIds={completedIds} />;
+
+      const results = phase === 'results' ? calcResults(confidence) : null;
+
+      const getFeedback = (res) => {
+        if (res.clgScore <= 2) return { label: 'Well Calibrated',  color: 'text-green-600',  bg: 'bg-green-50 border-green-200',  msg: 'Your confidence closely matched the actual outcome. Strong financial self-awareness.' };
+        if (confidence > res.competenceScore) return { label: 'Overconfident', color: 'text-red-500', bg: 'bg-red-50 border-red-200', msg: 'You were more confident than the outcome warranted. Overconfidence can lead to under-hedged portfolios.' };
+        return { label: 'Underconfident', color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200', msg: 'You underestimated your strategy. Building calibrated confidence through practice helps decision-making.' };
+      };
+
+      const assetLabels = scenario.assets.map(a => a.label);
+      const actualData  = scenario.assets.map(a => a.outcome);
+      const actualColors = actualData.map(v => v >= 0 ? 'rgba(34,197,94,0.75)' : 'rgba(239,68,68,0.75)');
+
+      return (
+        <div className="space-y-4">
+          {phase === 'confidence' && (
+            <ConfidenceModal onSubmit={(conf) => {
+              const res = calcResults(conf);
+              setConfidence(conf);
+              setPhase('results');
+              onComplete(scenario.id, res.clgScore);
+            }} />
+          )}
+
+          {/* Scenario header */}
+          <div className="bg-white shadow rounded p-6">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">{scenario.icon}</span>
+                  <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">HISTORICAL REPLAY</span>
+                  {phase === 'results' && <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">{scenario.period}</span>}
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">{scenario.title}</h2>
+              </div>
+              <button onClick={handleReset} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">← Change Scenario</button>
+            </div>
+            <p className="text-gray-600 text-sm mb-4">{scenario.description}</p>
+
+            {/* Market indicators */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+              {scenario.indicators.map((ind, i) => (
+                <div key={i} className={`rounded p-2 text-xs ${ind.color}`}>
+                  <p className="font-semibold">{ind.label}</p>
+                  <p className="mt-0.5 font-bold">{ind.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Allocation form */}
+          {phase === 'allocate' && (
+            <div className="bg-white shadow rounded p-6">
+              <h3 className="font-bold text-gray-800 mb-1">Allocate Your $1,000 Virtual Endowment</h3>
+              <p className="text-xs text-gray-500 mb-4">Distribute exactly $1,000 across the available assets. Asset insights are revealed after you submit.</p>
+
+              <div className="space-y-2 mb-4">
+                {scenario.assets.map(asset => (
+                  <div key={asset.key} className="border rounded p-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-gray-800">{asset.label}</p>
+                      <p className="text-xs text-gray-500">{asset.desc}</p>
+                    </div>
+                    <div className="flex items-center gap-1 w-28 flex-shrink-0">
+                      <span className="text-gray-400 text-sm">$</span>
+                      <input
+                        type="number" min="0" max="1000"
+                        value={allocation[asset.key] || ''}
+                        onChange={e => setAllocation(prev => ({ ...prev, [asset.key]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                        className="border rounded px-2 py-1 w-full text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Budget tracker */}
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Allocated: <strong>${total}</strong></span>
+                  <span className={remaining < 0 ? 'text-red-500 font-bold' : remaining === 0 ? 'text-green-600 font-bold' : ''}>
+                    {remaining > 0 ? `$${remaining} remaining` : remaining === 0 ? '✓ Fully allocated' : `$${Math.abs(remaining)} over budget`}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${total > 1000 ? 'bg-red-500' : total === 1000 ? 'bg-green-500' : 'bg-blue-400'}`}
+                    style={{ width: `${Math.min((total / 1000) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={() => { if (isValid) setPhase('confidence'); }}
+                disabled={!isValid}
+                className={`px-6 py-2 rounded font-semibold transition-all ${isValid ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+              >
+                Submit Allocation
+              </button>
+            </div>
+          )}
+
+          {/* Results view */}
+          {phase === 'results' && results && (() => {
+            const feedback   = getFeedback(results);
+            const dollarReturn = (results.returnPct / 100) * 1000;
+            return (
+              <div className="space-y-4">
+                {/* Breakdown table */}
+                <div className="bg-white shadow rounded p-6">
+                  <h3 className="font-bold text-gray-800 text-lg mb-3">What Actually Happened</h3>
+                  <div className="overflow-x-auto mb-4">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                        <tr>
+                          <th className="text-left px-3 py-2 rounded-tl">Asset</th>
+                          <th className="text-right px-3 py-2">You Allocated</th>
+                          <th className="text-right px-3 py-2">Actual Return</th>
+                          <th className="text-right px-3 py-2 rounded-tr">P&amp;L</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {scenario.assets.filter(a => allocation[a.key] > 0).map(a => {
+                          const pnl = (allocation[a.key] * a.outcome) / 100;
+                          return (
+                            <tr key={a.key} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium">{a.label}</td>
+                              <td className="text-right px-3 py-2 text-gray-600">${allocation[a.key]}</td>
+                              <td className={`text-right px-3 py-2 font-semibold ${a.outcome > 0 ? 'text-green-600' : a.outcome < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                {a.outcome > 0 ? '+' : ''}{a.outcome}%
+                              </td>
+                              <td className={`text-right px-3 py-2 font-semibold ${pnl > 0 ? 'text-green-600' : pnl < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                {pnl > 0 ? '+' : ''}${pnl.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-50 font-bold border-t-2 border-gray-300">
+                        <tr>
+                          <td className="px-3 py-2">Total</td>
+                          <td className="text-right px-3 py-2">$1,000</td>
+                          <td className={`text-right px-3 py-2 ${results.returnPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {results.returnPct >= 0 ? '+' : ''}{results.returnPct.toFixed(2)}%
+                          </td>
+                          <td className={`text-right px-3 py-2 ${dollarReturn >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {dollarReturn >= 0 ? '+' : ''}${dollarReturn.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Actual returns chart */}
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">All Asset Returns This Scenario</h4>
+                  <HorizontalBarChart
+                    id={`actual-${scenario.id}`}
+                    labels={assetLabels}
+                    data={actualData}
+                    colors={actualColors}
+                    xLabel="Actual Return %"
+                  />
+                </div>
+
+                {/* CLG + Feedback */}
+                <div className="bg-white shadow rounded p-6">
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded p-3 text-center">
+                      <p className="text-xs text-blue-500 mb-1">CLG Score</p>
+                      <p className="text-3xl font-bold text-blue-600">{results.clgScore}</p>
+                      <p className="text-xs text-gray-400 mt-1">Lower = better</p>
+                    </div>
+                    <div className="bg-gray-50 border rounded p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Your Confidence</p>
+                      <p className="text-3xl font-bold text-gray-700">{confidence}<span className="text-base font-normal">/10</span></p>
+                    </div>
+                    <div className="bg-gray-50 border rounded p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Competence Score</p>
+                      <p className="text-3xl font-bold text-gray-700">{results.competenceScore}<span className="text-base font-normal">/10</span></p>
+                    </div>
+                  </div>
+
+                  <div className={`border rounded p-4 mb-4 ${feedback.bg}`}>
+                    <p className={`font-bold text-lg mb-1 ${feedback.color}`}>{feedback.label}</p>
+                    <p className="text-gray-700 text-sm">{feedback.msg}</p>
+                  </div>
+
+                  {/* Scenario explanation reveal */}
+                  <div className="bg-gray-50 border rounded p-4">
+                    <p className="text-xs font-bold text-gray-500 uppercase mb-2">What Was This Scenario? — {scenario.period}</p>
+                    <p className="text-sm text-gray-700">{scenario.explanation}</p>
+                  </div>
+
+                  {baselineFSES !== null && (
+                    <p className="text-xs text-gray-400 mt-3">Baseline FSES: {baselineFSES.toFixed(1)}/5</p>
+                  )}
+                </div>
+
+                <button onClick={handleReset} className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                  ← Try a Different Scenario
+                </button>
+              </div>
+            );
+          })()}
+        </div>
+      );
+    }
+
+    // ── Live Market Tab ────────────────────────────────────────────────────────
+    function LiveMarketTab() {
+      const defaultAssets = [
+        { key: 'spy',  label: 'SPY — S&P 500 ETF', desc: 'Broad U.S. equity market', price: null },
+        { key: 'bnd',  label: 'BND — Bond ETF',     desc: 'U.S. aggregate bonds',    price: null },
+        { key: 'cash', label: 'Cash',               desc: 'No risk, no return',      price: 1    },
+      ];
+
+      const [assets, setAssets]               = useState(defaultAssets);
+      const [allocation, setAllocation]       = useState({});
+      const [livePhase, setLivePhase]         = useState('allocate');
+      const [pendingScenario, setPendingScenario] = useState(null);
+      const [loading, setLoading]             = useState(false);
+      const [searchTicker, setSearchTicker]   = useState('');
+      const [searchLoading, setSearchLoading] = useState(false);
+      const [searchError, setSearchError]     = useState('');
+
       useEffect(() => {
-        fetchStocks();
-        const interval = setInterval(fetchStocks, 10000);
-        return () => clearInterval(interval);
+        const stored = localStorage.getItem('pendingLiveScenario');
+        if (stored) {
+          const s = JSON.parse(stored);
+          const diffDays = (new Date() - new Date(s.dateSubmitted)) / (1000 * 60 * 60 * 24);
+          setPendingScenario({ ...s, ready: diffDays >= 7 });
+          setLivePhase(diffDays >= 7 ? 'resolve' : 'pending');
+        }
       }, []);
 
+      const fetchPrice = async (ticker) => {
+        const res  = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${LIVE_API_KEY}`);
+        const json = await res.json();
+        const price = parseFloat(json["Global Quote"]?.["05. price"] || 0);
+        if (!price) throw new Error(`No data for ${ticker}`);
+        return price;
+      };
+
+      const loadDefaultPrices = async () => {
+        setLoading(true);
+        try {
+          const [spy, bnd] = await Promise.all([fetchPrice('SPY'), fetchPrice('BND')]);
+          setAssets(prev => prev.map(a => a.key === 'spy' ? { ...a, price: spy } : a.key === 'bnd' ? { ...a, price: bnd } : a));
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+      };
+
+      const handleSearch = async () => {
+        const ticker = searchTicker.trim().toUpperCase();
+        if (!ticker) return;
+        if (assets.find(a => a.key === ticker.toLowerCase())) { setSearchError(`${ticker} is already in your list.`); return; }
+        setSearchLoading(true); setSearchError('');
+        try {
+          const price = await fetchPrice(ticker);
+          setAssets(prev => [...prev, { key: ticker.toLowerCase(), label: ticker, desc: `Live price: $${price.toFixed(2)}`, price }]);
+          setSearchTicker('');
+        } catch { setSearchError(`No data found for "${ticker}". Check the symbol and try again.`); }
+        finally { setSearchLoading(false); }
+      };
+
+      const removeAsset = (key) => {
+        setAssets(prev => prev.filter(a => a.key !== key));
+        setAllocation(prev => { const n = { ...prev }; delete n[key]; return n; });
+      };
+
+      const liveTotal = Object.values(allocation).reduce((s, v) => s + v, 0);
+      const liveValid = liveTotal === 1000;
+      const liveRemaining = 1000 - liveTotal;
+
+      const handleLiveConfidenceSubmit = (conf) => {
+        const startingPrices  = Object.fromEntries(assets.filter(a => a.price && a.key !== 'cash').map(a => [a.key, a.price]));
+        const assetLabels     = Object.fromEntries(assets.map(a => [a.key, a.label]));
+        const toSave = { dateSubmitted: new Date().toISOString(), allocation, confidenceScore: conf, startingPrices, assetLabels };
+        localStorage.setItem('pendingLiveScenario', JSON.stringify(toSave));
+        setPendingScenario({ ...toSave, ready: false });
+        setLivePhase('pending');
+      };
+
+      return (
+        <div className="space-y-4">
+          {livePhase === 'confidence' && <ConfidenceModal onSubmit={handleLiveConfidenceSubmit} />}
+
+          <div className="bg-white shadow rounded p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">LIVE MARKET</span>
+            </div>
+            <h2 className="text-xl font-bold mb-1">Current Market Scenario</h2>
+            <p className="text-gray-600 text-sm mb-5">Allocate $1,000 across real assets. Add any stock by ticker. Your allocation and confidence will be tracked and scored after 7 days.</p>
+
+            {livePhase === 'allocate' && (
+              <>
+                {/* Stock search */}
+                <div className="mb-5 p-4 bg-gray-50 border rounded">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Add a Stock by Ticker</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text" value={searchTicker} maxLength={10} placeholder="e.g. AAPL, TSLA, NVDA"
+                      onChange={e => { setSearchTicker(e.target.value.toUpperCase()); setSearchError(''); }}
+                      onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                      className="border rounded px-3 py-2 text-sm flex-1"
+                    />
+                    <button onClick={handleSearch} disabled={searchLoading || !searchTicker.trim()} className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 disabled:opacity-50 whitespace-nowrap">
+                      {searchLoading ? 'Looking up...' : 'Look Up'}
+                    </button>
+                  </div>
+                  {searchError && <p className="text-red-500 text-xs mt-2">{searchError}</p>}
+                </div>
+
+                {!assets.filter(a => a.key !== 'cash').every(a => a.price) && (
+                  <div className="mb-4">
+                    <button onClick={loadDefaultPrices} disabled={loading} className="bg-gray-700 text-white px-4 py-2 rounded text-sm hover:bg-gray-800 disabled:opacity-50">
+                      {loading ? 'Fetching...' : 'Load SPY & BND Prices'}
+                    </button>
+                  </div>
+                )}
+
+                <h3 className="font-semibold mb-3 text-sm text-gray-800">Allocate your $1,000:</h3>
+                <div className="space-y-2 mb-4">
+                  {assets.map(asset => (
+                    <div key={asset.key} className="border rounded p-3 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm text-gray-800">{asset.label}</span>
+                          {asset.price && asset.key !== 'cash' && <span className="text-xs text-gray-400">${asset.price.toFixed(2)}/share</span>}
+                        </div>
+                        <p className="text-xs text-gray-500">{asset.desc}</p>
+                      </div>
+                      <div className="flex items-center gap-1 w-28 flex-shrink-0">
+                        <span className="text-gray-400 text-sm">$</span>
+                        <input type="number" min="0" max="1000" value={allocation[asset.key] || ''} placeholder="0"
+                          onChange={e => setAllocation(prev => ({ ...prev, [asset.key]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          className="border rounded px-2 py-1 w-full text-sm" />
+                      </div>
+                      {!['spy', 'bnd', 'cash'].includes(asset.key) && (
+                        <button onClick={() => removeAsset(asset.key)} className="text-gray-300 hover:text-red-500 text-xl leading-none flex-shrink-0">×</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mb-4">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Allocated: <strong>${liveTotal}</strong></span>
+                    <span className={liveRemaining < 0 ? 'text-red-500 font-bold' : liveRemaining === 0 ? 'text-green-600 font-bold' : ''}>
+                      {liveRemaining > 0 ? `$${liveRemaining} remaining` : liveRemaining === 0 ? '✓ Fully allocated' : `$${Math.abs(liveRemaining)} over budget`}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${liveTotal > 1000 ? 'bg-red-500' : liveTotal === 1000 ? 'bg-green-500' : 'bg-blue-400'}`}
+                      style={{ width: `${Math.min((liveTotal / 1000) * 100, 100)}%` }} />
+                  </div>
+                </div>
+
+                <button onClick={() => { if (liveValid) setLivePhase('confidence'); }} disabled={!liveValid}
+                  className={`px-6 py-2 rounded font-semibold transition-all ${liveValid ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  Submit Allocation
+                </button>
+              </>
+            )}
+
+            {livePhase === 'pending' && pendingScenario && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                <p className="font-semibold text-yellow-700 mb-2">Live Scenario Active</p>
+                <p className="text-sm text-gray-700 mb-3">Submitted on <strong>{new Date(pendingScenario.dateSubmitted).toLocaleDateString()}</strong>. Return after 7 days to see results and receive your CLG score.</p>
+                <div className="text-xs text-gray-500 space-y-1">
+                  {Object.entries(pendingScenario.allocation).filter(([,v]) => v > 0).map(([k, v]) => (
+                    <p key={k}>{pendingScenario.assetLabels?.[k] || k}: ${v}</p>
+                  ))}
+                  <p className="mt-1">Confidence declared: {pendingScenario.confidenceScore}/10</p>
+                </div>
+              </div>
+            )}
+
+            {livePhase === 'resolve' && pendingScenario && (
+              <LiveResolve
+                pendingScenario={pendingScenario}
+                fetchPrice={fetchPrice}
+                onClear={() => { localStorage.removeItem('pendingLiveScenario'); setLivePhase('allocate'); setPendingScenario(null); setAssets(defaultAssets); setAllocation({}); }}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function LiveResolve({ pendingScenario, fetchPrice, onClear }) {
+      const [currentPrices, setCurrentPrices] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const handleResolve = async () => {
+        setLoading(true);
+        try {
+          const tickers = Object.keys(pendingScenario.startingPrices);
+          const prices  = await Promise.all(tickers.map(t => fetchPrice(t)));
+          setCurrentPrices(Object.fromEntries(tickers.map((t, i) => [t, prices[i]])));
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+      };
+
+      let res = null;
+      if (currentPrices) {
+        let weightedReturn = 0;
+        Object.entries(pendingScenario.allocation).forEach(([key, amt]) => {
+          if (key === 'cash') return;
+          const start = pendingScenario.startingPrices[key], end = currentPrices[key];
+          if (start && end) weightedReturn += ((end - start) / start) * 100 * (amt / 1000);
+        });
+        const competenceScore = weightedReturn > 0 ? 9 : weightedReturn > -3 ? 5 : weightedReturn > -7 ? 3 : 1;
+        res = { returnPct: weightedReturn, clgScore: Math.abs(pendingScenario.confidenceScore - competenceScore) };
+      }
+
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">Your live scenario from <strong>{new Date(pendingScenario.dateSubmitted).toLocaleDateString()}</strong> is ready to resolve.</p>
+          <button onClick={handleResolve} disabled={loading} className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 disabled:opacity-50">
+            {loading ? 'Fetching prices...' : 'Resolve Live Scenario'}
+          </button>
+          {res && (
+            <div className="bg-gray-50 border rounded p-4 text-sm space-y-2">
+              {Object.keys(pendingScenario.startingPrices).map(k => (
+                <p key={k}><strong>{pendingScenario.assetLabels?.[k] || k}:</strong> ${pendingScenario.startingPrices[k]?.toFixed(2)} → ${currentPrices[k]?.toFixed(2)}</p>
+              ))}
+              <div className="border-t pt-2 mt-2">
+                <p className={`font-bold ${res.returnPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  Portfolio Return: {res.returnPct >= 0 ? '+' : ''}{res.returnPct.toFixed(2)}%
+                </p>
+                <p className="font-bold text-blue-600 text-xl">Final CLG Score: {res.clgScore}</p>
+              </div>
+              <button onClick={onClear} className="text-xs text-gray-400 underline">Clear &amp; Start New</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Scores & Methodology Tab ──────────────────────────────────────────────
+    function ScoresTab({ baselineFSES, completedScenarios, overallCLG, allDone }) {
+      const clgInterpret = (score) => {
+        if (score <= 2)  return { label: 'Well Calibrated',  color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
+        if (score <= 5)  return { label: 'Moderate Gap',     color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' };
+        return               { label: 'Large Gap',          color: 'text-red-500',    bg: 'bg-red-50 border-red-200' };
+      };
+
+      const fsesInterpret = (score) => {
+        if (score >= 4)  return { label: 'High Self-Efficacy',    color: 'text-green-600' };
+        if (score >= 3)  return { label: 'Moderate Self-Efficacy', color: 'text-yellow-600' };
+        return               { label: 'Low Self-Efficacy',       color: 'text-red-500' };
+      };
+
+      return (
+        <div className="space-y-5">
+
+          {/* Your Scores */}
+          <div className="bg-white shadow rounded p-6">
+            <h2 className="text-xl font-bold mb-1">Your Scores</h2>
+            <p className="text-gray-500 text-sm mb-5">These are updated as you complete each scenario. Finish all five for your final Overall CLG.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              {/* FSES */}
+              <div className="border rounded p-4">
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">FSES Baseline</p>
+                {baselineFSES !== null ? (
+                  <>
+                    <p className="text-4xl font-bold text-gray-800 mb-1">{baselineFSES.toFixed(1)}<span className="text-lg font-normal text-gray-400"> / 5</span></p>
+                    <p className={`text-sm font-semibold ${fsesInterpret(baselineFSES).color}`}>{fsesInterpret(baselineFSES).label}</p>
+                  </>
+                ) : (
+                  <p className="text-gray-400 text-sm italic">Not yet recorded</p>
+                )}
+              </div>
+
+              {/* Overall CLG */}
+              <div className="border rounded p-4">
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Overall CLG Score</p>
+                {allDone ? (
+                  <>
+                    <p className="text-4xl font-bold text-blue-600 mb-1">{overallCLG}<span className="text-lg font-normal text-gray-400"> avg</span></p>
+                    <p className={`text-sm font-semibold ${clgInterpret(parseFloat(overallCLG)).color}`}>{clgInterpret(parseFloat(overallCLG)).label}</p>
+                  </>
+                ) : (
+                  <p className="text-gray-400 text-sm italic">
+                    {completedScenarios.length === 0
+                      ? 'Complete all 5 scenarios to see your score'
+                      : `${completedScenarios.length} of 5 scenarios done`}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Per-scenario breakdown */}
+            {completedScenarios.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Scenario Breakdown</p>
+                <div className="space-y-2">
+                  {completedScenarios.map(cs => {
+                    const s = scenarios.find(sc => sc.id === cs.id);
+                    const interp = clgInterpret(cs.clgScore);
+                    return (
+                      <div key={cs.id} className={`border rounded p-3 flex items-center justify-between ${interp.bg}`}>
+                        <div className="flex items-center gap-2">
+                          <span>{s.icon}</span>
+                          <span className="text-sm font-medium text-gray-700">{s.title}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-lg font-bold ${interp.color}`}>{cs.clgScore}</span>
+                          <span className={`text-xs ml-1 ${interp.color}`}>{interp.label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* What is FSES */}
+          <div className="bg-white shadow rounded p-6">
+            <h3 className="text-lg font-bold mb-1">What is the FSES Score?</h3>
+            <p className="text-xs text-gray-400 mb-3 italic">Based on Lown et al.'s Financial Self-Efficacy Scale</p>
+            <p className="text-sm text-gray-700 mb-3">
+              The <strong>Financial Self-Efficacy Scale (FSES)</strong> measures your belief in your own ability to manage financial decisions. It is rooted in Albert Bandura's Self-Efficacy Theory, which holds that confidence in a task directly shapes how we approach it — including whether we seek information, take risks, or freeze under pressure.
+            </p>
+            <p className="text-sm text-gray-700 mb-4">
+              Your FSES score is the average of your three responses at the start of the session, each rated 1–5. A higher score indicates stronger financial self-belief going into the simulation.
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-red-50 border border-red-200 rounded p-2">
+                <p className="font-bold text-red-600">1.0 – 2.9</p>
+                <p className="text-gray-600 mt-1">Low Self-Efficacy</p>
+                <p className="text-gray-500 mt-1">Tends to avoid financial decisions or defer to others</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                <p className="font-bold text-yellow-600">3.0 – 3.9</p>
+                <p className="text-gray-600 mt-1">Moderate Self-Efficacy</p>
+                <p className="text-gray-500 mt-1">Some confidence but often second-guesses decisions</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded p-2">
+                <p className="font-bold text-green-600">4.0 – 5.0</p>
+                <p className="text-gray-600 mt-1">High Self-Efficacy</p>
+                <p className="text-gray-500 mt-1">Approaches financial decisions with confidence and initiative</p>
+              </div>
+            </div>
+          </div>
+
+          {/* What is CLG */}
+          <div className="bg-white shadow rounded p-6">
+            <h3 className="text-lg font-bold mb-1">What is the CLG Score?</h3>
+            <p className="text-xs text-gray-400 mb-3 italic">Based on Kaiser & Menkhoff's Financial Literacy Confidence construct</p>
+            <p className="text-sm text-gray-700 mb-3">
+              The <strong>Confidence-Literacy Gap (CLG)</strong> measures the distance between how confident you feel about a financial decision and how competent that decision actually was. A large gap — in either direction — signals a calibration problem that can lead to real-world financial harm.
+            </p>
+            <div className="bg-gray-50 border rounded p-4 mb-4 font-mono text-sm text-center">
+              <p className="text-gray-500 text-xs mb-1">Formula</p>
+              <p><strong>CLG = |Confidence Score − Competence Score|</strong></p>
+              <p className="text-xs text-gray-400 mt-2">Both scored on a 1–10 scale. Competence is derived from your actual portfolio return.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs mb-4">
+              <div className="bg-green-50 border border-green-200 rounded p-2">
+                <p className="font-bold text-green-600">0 – 2</p>
+                <p className="text-gray-600 mt-1">Well Calibrated</p>
+                <p className="text-gray-500 mt-1">Confidence aligns with actual performance</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                <p className="font-bold text-yellow-600">3 – 5</p>
+                <p className="text-gray-600 mt-1">Moderate Gap</p>
+                <p className="text-gray-500 mt-1">Some miscalibration — room to improve</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded p-2">
+                <p className="font-bold text-red-600">6 – 8+</p>
+                <p className="text-gray-600 mt-1">Large Gap</p>
+                <p className="text-gray-500 mt-1">Significant over- or under-confidence</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="border-l-4 border-red-400 pl-3">
+                <p className="text-sm font-semibold text-gray-800">Overconfidence (Confidence {'>'} Competence)</p>
+                <p className="text-xs text-gray-600 mt-0.5">You felt more certain than the outcome warranted. This is the more dangerous pattern — overconfident investors tend to under-hedge, over-concentrate, and trade too frequently.</p>
+              </div>
+              <div className="border-l-4 border-yellow-400 pl-3">
+                <p className="text-sm font-semibold text-gray-800">Underconfidence (Confidence {'<'} Competence)</p>
+                <p className="text-xs text-gray-600 mt-0.5">Your strategy performed better than you expected. While less harmful, chronic underconfidence can cause investors to sit on the sidelines and miss growth opportunities.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* How competence score is derived */}
+          <div className="bg-white shadow rounded p-6">
+            <h3 className="text-lg font-bold mb-3">How the Competence Score is Calculated</h3>
+            <p className="text-sm text-gray-700 mb-4">After revealing the historical outcome, your portfolio's weighted return is mapped to a 1–10 Competence Score:</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border rounded">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                  <tr>
+                    <th className="text-left px-3 py-2">Portfolio Return</th>
+                    <th className="text-left px-3 py-2">Competence Score</th>
+                    <th className="text-left px-3 py-2">Interpretation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-xs">
+                  <tr><td className="px-3 py-2 text-green-600 font-medium">Positive ({'>'} 0%)</td><td className="px-3 py-2 font-bold">9 / 10</td><td className="px-3 py-2 text-gray-600">Portfolio grew — strong allocation decision</td></tr>
+                  <tr><td className="px-3 py-2 text-yellow-600 font-medium">Slight loss (0% to −3%)</td><td className="px-3 py-2 font-bold">5 / 10</td><td className="px-3 py-2 text-gray-600">Near-neutral — defensible allocation</td></tr>
+                  <tr><td className="px-3 py-2 text-orange-500 font-medium">Moderate loss (−3% to −7%)</td><td className="px-3 py-2 font-bold">3 / 10</td><td className="px-3 py-2 text-gray-600">Meaningful loss — allocation could be improved</td></tr>
+                  <tr><td className="px-3 py-2 text-red-600 font-medium">Large loss ({'<'} −7%)</td><td className="px-3 py-2 font-bold">1 / 10</td><td className="px-3 py-2 text-gray-600">Heavy loss — allocation was poorly suited to the scenario</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+
+    // ── App ────────────────────────────────────────────────────────────────────
+    function App() {
+      const [showAssessment, setShowAssessment]       = useState(true);
+      const [baselineFSES, setBaselineFSES]           = useState(null);
+      const [tab, setTab]                             = useState('simulation');
+      const [simMode, setSimMode]                     = useState('historical');
+      // { id, clgScore } for each completed historical scenario
+      const [completedScenarios, setCompletedScenarios] = useState([]);
+      const chartRef         = useRef(null);
+      const chartInstanceRef = useRef(null);
+
+      const completedIds = completedScenarios.map(s => s.id);
+      const allDone      = completedScenarios.length === scenarios.length;
+      const overallCLG   = allDone
+        ? (completedScenarios.reduce((sum, s) => sum + s.clgScore, 0) / completedScenarios.length).toFixed(1)
+        : null;
+
+      const handleScenarioComplete = (id, clgScore) => {
+        setCompletedScenarios(prev =>
+          prev.find(s => s.id === id) ? prev : [...prev, { id, clgScore }]
+        );
+      };
+
       const pieData = {
-        labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
-        datasets: [
-          {
-            data: [45, 25, 15, 10, 5],
-            backgroundColor: ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"],
-            borderWidth: 1,
-          },
-        ],
+        labels: ['Tech', 'Healthcare', 'Retail', 'Energy', 'Misc'],
+        datasets: [{ data: [45, 25, 15, 10, 5], backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'], borderWidth: 1 }],
       };
 
       useEffect(() => {
-        if (tab === "portfolio" && chartRef.current) {
+        if (tab === 'portfolio' && chartRef.current) {
           if (chartInstanceRef.current) chartInstanceRef.current.destroy();
-          const ctx = chartRef.current.getContext("2d");
-          chartInstanceRef.current = new Chart(ctx, {
-            type: "doughnut",
-            data: pieData,
-            options: {
-              responsive: true,
-              plugins: {
-                legend: { position: "bottom" },
-                tooltip: {
-                  callbacks: {
-                    label: function (tooltipItem) {
-                      const total = pieData.datasets[0].data.reduce((a, b) => a + b, 0);
-                      const value = pieData.datasets[0].data[tooltipItem.dataIndex];
-                      const percent = ((value / total) * 100).toFixed(1);
-                      return `${pieData.labels[tooltipItem.dataIndex]}: ${percent}%`;
-                    },
-                  },
-                },
-              },
-            },
+          chartInstanceRef.current = new Chart(chartRef.current.getContext('2d'), {
+            type: 'doughnut', data: pieData,
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
           });
         }
       }, [tab]);
 
-      const handleAddSavings = () => {
-        const input = prompt("How much would you like to add?");
-        const amount = parseFloat(input);
-        if (!isNaN(amount) && amount > 0) {
-          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
-        } else {
-          alert("Please enter a valid number greater than 0.");
-        }
-      };
-
       return (
         <>
-          {showSplash && <SplashModal onClose={() => setShowSplash(false)} />}
+          {showAssessment && <AssessmentModal onClose={avg => { setBaselineFSES(avg); setShowAssessment(false); }} />}
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
-              <h1 className="text-3xl font-bold">📈 The Litmus Dashboard</h1>
+              <h1 className="text-3xl font-bold">Financial Litmus</h1>
+              <div className="flex items-center gap-2">
+                {baselineFSES !== null && (
+                  <span className="text-sm text-gray-500 bg-white shadow rounded px-3 py-1">
+                    FSES: <strong>{baselineFSES.toFixed(1)}</strong>/5
+                  </span>
+                )}
+                {completedScenarios.length > 0 && !allDone && (
+                  <span className="text-sm text-gray-500 bg-white shadow rounded px-3 py-1">
+                    Scenarios: <strong>{completedScenarios.length}/{scenarios.length}</strong>
+                  </span>
+                )}
+                {allDone && (
+                  <span className="text-sm font-semibold bg-blue-500 text-white shadow rounded px-3 py-1">
+                    Overall CLG: <strong>{overallCLG}</strong>
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="space-x-4">
-              <button className={`px-4 py-2 rounded ${tab === "portfolio" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("portfolio")}>My Portfolio</button>
-              <button className={`px-4 py-2 rounded ${tab === "news" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("news")}>Daily News</button>
+            <div className="space-x-2">
+              {[
+                { key: 'simulation', label: 'Simulation' },
+                { key: 'scores',     label: 'My Scores' },
+                { key: 'portfolio',  label: 'My Portfolio' },
+                { key: 'news',       label: 'Daily News' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => setTab(key)}
+                  className={`px-4 py-2 rounded ${tab === key ? 'bg-blue-500 text-white' : 'bg-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {tab === "portfolio" && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white shadow rounded p-4">
-                    <h2 className="text-xl font-semibold mb-4">Current Holdings</h2>
-                    <canvas ref={chartRef} width="300" height="300" />
-                  </div>
-
-                  <div className="bg-white shadow rounded p-4">
-                    <h2 className="text-xl font-semibold mb-4">Stock Performance</h2>
-                    <ul className="space-y-2">
-                      {stockData.map((stock) => {
-                        const status = stock.price === "N/A" ? "neutral" : stock.change > 0 ? "up" : stock.change < 0 ? "down" : "neutral";
-                        return (
-                          <li key={stock.ticker}>
-                            <div className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${status === "up" ? "text-green-600" : status === "down" ? "text-red-500" : "text-yellow-600"} hover:bg-gray-100`} onClick={() => setExpandedStock(expandedStock === stock.ticker ? null : stock.ticker)}>
-                              <span>{stock.ticker}</span>
-                              <span>{stock.price === "N/A" ? "N/A" : `$${parseFloat(stock.price).toFixed(2)} (${stock.change.toFixed(2)}%)${stock.marketClosed ? " - Market Closed" : ""}`}</span>
-                            </div>
-                            {expandedStock === stock.ticker && (
-                              <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
-                                <p><strong>Ticker:</strong> {stock.ticker}</p>
-                                <p><strong>Price:</strong> {stock.price}</p>
-                                <p><strong>Change:</strong> {stock.change.toFixed(2)}%</p>
-                                <p><strong>Status:</strong> {stock.marketClosed ? "Market Closed" : "Live"}</p>
-                                <p><em>Data from Alpha Vantage</em></p>
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
+            {tab === 'simulation' && (
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <button onClick={() => setSimMode('historical')}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${simMode === 'historical' ? 'bg-blue-500 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:border-blue-400'}`}>
+                    Historical Replay
+                  </button>
+                  <button onClick={() => setSimMode('live')}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${simMode === 'live' ? 'bg-green-500 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:border-green-400'}`}>
+                    Live Market
+                  </button>
                 </div>
-
-                <div className="bg-white shadow rounded p-4 mt-6">
-                  <h2 className="text-xl font-semibold mb-4">My First Portfolio Wizard</h2>
-                  <p className="mb-2">Answer a few questions to create your first investment plan.</p>
-                  <button className="bg-blue-500 text-white px-4 py-2 rounded">Start Setup</button>
-                </div>
-
-                <div className="bg-white shadow rounded p-4 mt-6">
-                  <h2 className="text-xl font-semibold mb-2">🎯 Shared Savings Goal</h2>
-                  <p className="mb-1">Goal: Save $200 for college fund</p>
-                  <div className="w-full bg-gray-200 h-4 rounded overflow-hidden mb-2">
-                    <div className="bg-green-500 h-full" style={{ width: `${(goalProgress / goalTotal) * 100}%` }}></div>
-                  </div>
-                  <p className="text-sm mb-2">Progress: ${goalProgress.toFixed(2)} / ${goalTotal}</p>
-                  <button onClick={handleAddSavings} className="bg-green-600 text-white px-4 py-2 rounded">Add to Goal</button>
-                </div>
-              </>
+                {simMode === 'historical'
+                  ? <SimulationTab baselineFSES={baselineFSES} completedIds={completedIds} onComplete={handleScenarioComplete} />
+                  : <LiveMarketTab />
+                }
+              </div>
             )}
 
-            {tab === "news" && (
+            {tab === 'scores' && (
+              <ScoresTab
+                baselineFSES={baselineFSES}
+                completedScenarios={completedScenarios}
+                overallCLG={overallCLG}
+                allDone={allDone}
+              />
+            )}
+
+            {tab === 'portfolio' && (
+              <div className="bg-white shadow rounded p-4">
+                <h2 className="text-xl font-semibold mb-4">Current Holdings</h2>
+                <canvas ref={chartRef} width="300" height="300" />
+              </div>
+            )}
+
+            {tab === 'news' && (
               <div className="bg-white shadow rounded p-4">
                 <h2 className="text-xl font-semibold mb-4">Today's Headlines</h2>
-                <ul className="space-y-2">
+                <ul className="space-y-2 text-sm">
                   <li>📊 Tech sector rebounds after dip</li>
                   <li>🛢️ Oil prices stabilize</li>
                   <li>🛒 Retail stocks show upward trend</li>
                 </ul>
                 <div className="mt-4">
-                  <p className="font-medium">🧠 Quick Poll:</p>
-                  <p className="mb-2">Which sector is booming today?</p>
-                  <input className="border px-2 py-1 rounded w-full" placeholder="Type your answer..." />
+                  <p className="font-medium text-sm">🧠 Quick Poll: Which sector is booming today?</p>
+                  <input className="border px-2 py-1 rounded w-full mt-2 text-sm" placeholder="Type your answer..." />
                 </div>
               </div>
             )}
@@ -224,7 +1070,7 @@
       );
     }
 
-    ReactDOM.render(<App />, document.getElementById("root"));
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>
