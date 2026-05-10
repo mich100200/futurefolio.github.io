@@ -1,0 +1,3 @@
+window.ENV = {
+  ALPHA_VANTAGE_KEY: 'YOUR_API_KEY_HERE'
+};
