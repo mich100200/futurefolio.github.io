@@ -269,6 +269,277 @@
       { ticker: 'BA',    name: 'Boeing'      },
     ];
 
+    // ── Sector Data ────────────────────────────────────────────────────────────
+    const SECTOR_MAP = {
+      AAPL: 'Technology',  MSFT: 'Technology',  GOOGL: 'Technology',
+      AMZN: 'Consumer Discretionary',  NKE: 'Consumer Discretionary',
+      META: 'Media & Entertainment',  NFLX: 'Media & Entertainment',  DIS: 'Media & Entertainment',
+      NVDA: 'Semiconductors',
+      TSLA: 'Electric Vehicles',
+      JPM:  'Financial Services',  V: 'Financial Services',
+      KO:   'Consumer Staples',  MCD: 'Consumer Staples',  WMT: 'Consumer Staples',  SBUX: 'Consumer Staples',
+      PFE:  'Healthcare/Pharma',
+      BA:   'Aerospace & Defense',
+    };
+    function getSector(ticker) {
+      return SECTOR_MAP[ticker.toUpperCase()] || 'General Equity';
+    }
+
+    const SECTOR_CONTENT = {
+      'Technology': {
+        keyMetric:  'Price-to-Earnings (P/E) ratio — tech companies often trade at high multiples, meaning you are paying a premium for expected future growth, not current profits.',
+        keyRisk:    'Interest rate sensitivity. When rates rise, future profits are worth less today, which hits high-growth tech stocks harder than most other sectors.',
+        watchFor:   'Federal Reserve interest rate decisions, quarterly earnings reports (especially revenue growth guidance), and any antitrust or regulatory news from the DOJ or EU.',
+        reflection: 'If this company stopped growing tomorrow and simply held its current revenue flat, would its stock price still make sense? What does your answer reveal about how much of the price is based on proven reality versus investor expectations?',
+      },
+      'Consumer Staples': {
+        keyMetric:  'Dividend yield — staples companies are known for reliable, growing dividends. A falling yield (as the price rises) can signal the stock is becoming expensive relative to its income.',
+        keyRisk:    'Margin compression from inflation. When input costs like ingredients, packaging, and logistics rise faster than companies can raise prices, profits shrink even when sales look stable.',
+        watchFor:   'CPI (Consumer Price Index) data releases, quarterly gross margin commentary on earnings calls, and commodity price trends for key inputs like corn, sugar, coffee, or wheat.',
+        reflection: 'People buy Coca-Cola and McDonald\'s even in recessions. Does that stability make you feel safer holding this stock — or does it make you wonder why the upside is more limited than faster-growing sectors?',
+      },
+      'Consumer Discretionary': {
+        keyMetric:  'Same-store sales growth or revenue growth rate — this tells you whether the core business is genuinely expanding or whether growth is just coming from new store openings.',
+        keyRisk:    'Consumer spending cycles. When unemployment rises or confidence falls, people cut discretionary purchases first. These stocks often fall faster than the broader market in downturns.',
+        watchFor:   'Consumer Confidence Index (CCI) releases, monthly retail sales reports, unemployment claims, and company-specific data on inventory levels and foot traffic.',
+        reflection: 'Would you personally buy more of this company\'s products if your income dropped 20%? If the honest answer is no, what does that tell you about the risk of holding this stock through an economic slowdown?',
+      },
+      'Financial Services': {
+        keyMetric:  'Net Interest Margin (NIM) — the spread between what a bank earns on loans and what it pays on deposits. It is the core engine of banking profitability.',
+        keyRisk:    'Credit cycle risk. When the economy weakens, loan defaults rise rapidly, eroding bank profits. Regulatory changes — capital requirements, stress tests — can also affect returns unexpectedly.',
+        watchFor:   'Federal Reserve interest rate decisions (directly affects NIM), quarterly loan loss provisions on earnings calls, and any Federal Reserve stress test results.',
+        reflection: 'Banks profit when people and businesses borrow confidently and repay reliably. If you believed a recession was 12 months away, how would that change how much you wanted to own in this sector?',
+      },
+      'Healthcare/Pharma': {
+        keyMetric:  'Pipeline depth — the number of drug candidates in Phase 2 and Phase 3 clinical trials. A thin pipeline means heavy dependence on existing approved drugs.',
+        keyRisk:    'Binary event risk. A single FDA rejection can drop a pharma stock 20–40% in a day. A major drug losing patent protection can eliminate billions in revenue overnight.',
+        watchFor:   'FDA advisory committee meetings and approval decisions, patent expiration calendars for key drugs, and Medicare drug price negotiation announcements.',
+        reflection: 'Pharmaceutical companies can save lives and generate enormous profits — or lose both in a single clinical trial failure. Does that binary risk profile match how you normally make decisions when the outcome is uncertain?',
+      },
+      'Media & Entertainment': {
+        keyMetric:  'Subscriber count or Monthly Active Users (MAU) — for streaming and social media companies, audience size drives both ad revenue and subscription income.',
+        keyRisk:    'Attention risk. Revenue is directly tied to how many people use the platform and how often. Competition for time is intense, and user behavior can shift faster than a company can adapt.',
+        watchFor:   'Quarterly subscriber or user growth numbers, advertiser spending trends, and regulatory news around content moderation, data privacy (especially EU rules), or antitrust.',
+        reflection: 'How many hours per week do you personally spend on this company\'s platform or content? Does knowing your own usage pattern change how you think about whether this business can keep growing?',
+      },
+      'Semiconductors': {
+        keyMetric:  'Data center revenue growth and order backlog — for AI-era chip companies, these signal whether enterprise demand is structural or a short-term wave that could reverse.',
+        keyRisk:    'Supply chain concentration and geopolitical risk. The most advanced chips are manufactured in Taiwan. Any disruption to that supply chain — political, natural, or military — would have immediate global impact.',
+        watchFor:   'TSMC earnings and capacity announcements, U.S.–China trade policy (especially export controls on advanced chips), and major hyperscaler capital spending plans from Microsoft, Google, Amazon, and Meta.',
+        reflection: 'Chip companies\' market caps have grown faster than almost any other sector during the AI wave — driven largely by enthusiasm about what AI will become. How much of the current stock price do you believe reflects what AI will definitely deliver, versus what investors hope it will?',
+      },
+      'Electric Vehicles': {
+        keyMetric:  'Vehicle delivery numbers and production capacity utilization — these reveal whether the company is actually scaling or merely promising to scale.',
+        keyRisk:    'Regulatory and policy risk. EV economics are deeply tied to federal tax credits, emissions regulations, and infrastructure spending. A change in administration can materially shift the business.',
+        watchFor:   'Quarterly delivery reports, federal EV tax credit policy changes, energy credit revenue announcements (a significant but volatile income stream), and competition from legacy automakers entering EV.',
+        reflection: 'EV adoption depends simultaneously on charging infrastructure, battery costs, consumer preferences, and government policy. If one of those four factors reversed course, how confident are you that the others would compensate?',
+      },
+      'Aerospace & Defense': {
+        keyMetric:  'Backlog-to-revenue ratio — defense contracts are often multi-year. A large backlog provides revenue visibility, but technical delays can persist for years even after a contract is won.',
+        keyRisk:    'Program execution risk. Cost overruns on fixed-price government contracts have historically been a major source of losses. Safety incidents can ground entire product lines indefinitely.',
+        watchFor:   'U.S. defense budget appropriations, FAA or NTSB safety investigations, major contract awards or cancellations from the Department of Defense, and any cost-to-complete estimate changes on fixed-price programs.',
+        reflection: 'Defense companies tend to benefit from geopolitical instability — more conflict generally means more government spending on their products. Does owning a stake in that dynamic feel straightforward to you, or does it raise questions you want to think through?',
+      },
+      'General Equity': {
+        keyMetric:  'Revenue growth rate and profit margin trend — for any company, these two numbers together tell you whether the business is genuinely expanding or just cutting costs to show profits.',
+        keyRisk:    'Familiarity bias. Investors often overweight companies they have heard of, even when they do not understand the business model. Recognizing a brand name is not the same as understanding an investment.',
+        watchFor:   'Quarterly earnings reports (especially revenue guidance for the next quarter), any significant management changes, and broader market sentiment indicators like the VIX volatility index.',
+        reflection: 'Can you explain in three sentences how this company makes money and why it should be worth more in five years than it is today? If that is difficult, what specific information would you need to answer it with confidence?',
+      },
+    };
+
+    // ── Plan personalization helpers ────────────────────────────────────────────
+    function fmtChange(pct) {
+      if (Math.abs(pct) < 0.005) return 'flat';
+      return (pct >= 0 ? 'up ' : 'down ') + Math.abs(pct).toFixed(2) + '%';
+    }
+    function gainedOrLost(pct) { return pct >= 0 ? 'gained' : 'lost'; }
+    function stockListPhrase(wl) {
+      const items = wl.map(s => `${s.name || s.ticker} (${s.ticker})`);
+      if (items.length === 1) return items[0];
+      if (items.length === 2) return items[0] + ' and ' + items[1];
+      return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+    }
+    function getDiversificationProfile(sectors) {
+      const u = [...new Set(sectors)];
+      if (u.length === 1) return 'concentrated';
+      if (u.length === sectors.length) return 'fully diversified';
+      return 'partially diversified';
+    }
+
+    // ── Personalized step generator ─────────────────────────────────────────────
+    function generatePersonalizedSteps(watchlist, tier) {
+      const enriched = watchlist.map(s => ({
+        ...s,
+        sector:  getSector(s.ticker),
+        content: SECTOR_CONTENT[getSector(s.ticker)],
+      }));
+      const sectors       = enriched.map(e => e.sector);
+      const uniqueSectors = [...new Set(sectors)];
+      const divProfile    = getDiversificationProfile(sectors);
+      const sorted        = [...enriched].sort((a, b) => b.changePct - a.changePct);
+      const best          = sorted[0];
+      const worst         = sorted[sorted.length - 1];
+      const listPhrase    = stockListPhrase(watchlist);
+      const isLow = tier === 'low', isHigh = tier === 'high';
+
+      // ── Step 1: Why These Stocks ──────────────────────────────────────────────
+      const step1 = {
+        icon: '🪞', tag: 'Self-Awareness',
+        title: 'Step 1 — Why Did You Pick These Stocks? (Week 1)',
+        objective: `Examine the reasoning behind your choice of ${listPhrase} — and separate genuine knowledge from familiarity.`,
+        actions: isLow ? [
+          `Write one sentence for each stock explaining exactly why you picked it. "I've heard of it" is a valid starting answer — honesty here is the point.`,
+          `For each stock, describe in plain language what the company actually does and how it makes money. If you're unsure about one, that's the signal.`,
+          `Rate your actual confidence in each stock on a scale of 1–5. The gaps between your ratings matter more than the ratings themselves.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} is in the ${e.sector} sector`).join(', ')}.`,
+        ] : isHigh ? [
+          `Write a complete bull and bear case for each of ${listPhrase}. Both cases must be grounded in data, not sentiment.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Was that a deliberate risk decision?`,
+          `Identify the single assumption that underlies all three positions simultaneously. If that assumption breaks, what happens to the entire portfolio?`,
+        ] : [
+          `Write a 2–3 sentence investment thesis for each stock — why you believe it is worth owning right now, not just why you've heard of it.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Was that intentional?`,
+          `For your strongest conviction pick, state what would have to be true about the world in 12 months for your thesis to be wrong.`,
+        ],
+        reflection: isLow
+          ? `Which of your three stocks would be hardest to explain to a friend — and which feels easiest? That gap is exactly where this learning path begins.`
+          : isHigh
+          ? `What would a sophisticated short-seller say about your portfolio as a whole — not individual stocks, but the macro thesis that must hold for all three to outperform?`
+          : `If you had to drop one stock right now, which would it be and why? The ease or difficulty of that decision reveals how strong your actual conviction is.`,
+        why: isLow
+          ? `Metacognition — knowing what you know versus what you think you know — is the prerequisite for learning. Bandura's self-efficacy research shows that people who can accurately assess their own competence improve faster than those who over- or underestimate it.`
+          : `Investment thesis documentation is used by professional fund managers because it creates an auditable record that separates process from outcome — the foundation of calibrated confidence rather than overconfidence.`,
+      };
+
+      // ── Step 2: Diversification / Risk Profile ────────────────────────────────
+      const divActions = (() => {
+        if (divProfile === 'concentrated') {
+          const sector = uniqueSectors[0];
+          return isLow ? [
+            `All three of your stocks — ${listPhrase} — are in the ${sector} sector. Look up what "concentration risk" means.`,
+            `Research what typically happens to ${sector} stocks during the specific risk event for that sector: ${enriched[0].content.keyRisk}`,
+            `Identify one stock from a completely different sector that you could theoretically swap in. What would change about your portfolio's risk?`,
+            `Write down: what is the single event that would cause all three of your stocks to fall at the same time?`,
+          ] : [
+            `Your entire portfolio (${listPhrase}) sits in ${sector}. Quantify the correlation — look up each stock's beta relative to the ${sector} sector index.`,
+            `Sector risk: ${enriched[0].content.keyRisk} Estimate how a severe version of this risk would affect each of your three holdings differently.`,
+            `Argue why high-conviction sector concentration can be a valid strategy. Then argue why it is dangerous for a new investor. Which argument is stronger for your situation?`,
+          ];
+        } else if (divProfile === 'fully diversified') {
+          return isLow ? [
+            `Your three stocks span distinct sectors: ${enriched.map(e => `${e.name} is ${e.sector}`).join(', ')}. This is called sector diversification.`,
+            `Look up what diversification is designed to protect against. Write one sentence in your own words.`,
+            `This past week, which direction did each of your stocks move? If they all moved the same way, research what "market correlation" means — sectors can still move together in a broad selloff.`,
+            `Research what an index fund is and how it achieves diversification automatically. How does your three-stock portfolio compare?`,
+          ] : [
+            `Your portfolio spans ${uniqueSectors.join(', ')} — this is sector-diversified. But evaluate whether these sectors are actually uncorrelated in practice.`,
+            `Research each sector's performance during the 2022 rate-hike cycle. Did sector diversity protect investors, or did all three sectors fall together regardless?`,
+            `True diversification is about correlation, not just sector labels. Look up the correlation between your sectors over the last 3 years. Does the data support your diversification thesis?`,
+          ];
+        } else {
+          return isLow ? [
+            `Your portfolio covers ${uniqueSectors.length} sectors: ${enriched.map(e => `${e.ticker} (${e.sector})`).join(', ')}.`,
+            `Research: what does it mean when two assets are "correlated"? Write a plain-English definition — no jargon.`,
+            `Which two of your stocks do you think would react most similarly if the U.S. economy slowed sharply? What makes you think so?`,
+            `If you had to add a fourth stock from a sector not yet in your portfolio, what sector would you choose and why?`,
+          ] : [
+            `You have ${uniqueSectors.length} sectors: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Evaluate whether your mix is genuinely uncorrelated or just superficially different.`,
+            `Look up historical correlation between your represented sectors. Are any more correlated than you assumed?`,
+            `Design the single addition that would most improve your portfolio's risk-adjusted profile — and explain why using data, not intuition.`,
+          ];
+        }
+      })();
+
+      const step2 = {
+        icon: '⚖️', tag: 'Portfolio Analysis',
+        title: `Step 2 — Understand Your Portfolio's Risk Profile (Week 1)`,
+        objective: `Understand what ${divProfile === 'concentrated' ? 'concentration' : 'diversification'} actually means for your specific holdings — not as an abstract concept, but as a property of ${listPhrase}.`,
+        actions: divActions,
+        reflection: divProfile === 'concentrated'
+          ? `If the single biggest risk to the ${uniqueSectors[0]} sector materialized tomorrow, what would happen to your virtual portfolio — and how would that feel emotionally? What does that reaction tell you about your actual risk tolerance?`
+          : `Your stocks span multiple sectors. Does that mean you're protected from a major market downturn? Think carefully: what single scenario would cause all three to fall simultaneously — and how likely is that scenario?`,
+        why: `Modern Portfolio Theory (Markowitz, 1952) established that risk-adjusted returns improve when portfolio components have low correlation — meaning they respond differently to the same market events. Understanding this at the level of your own holdings is more durable than understanding it abstractly.`,
+      };
+
+      // ── Steps 3–5: Per-stock analysis ─────────────────────────────────────────
+      const perStockSteps = enriched.map((stock, idx) => {
+        const { name, ticker, changePct, sector, content } = stock;
+        const direction = fmtChange(changePct);
+        const gl        = gainedOrLost(changePct);
+        const stepNum   = idx + 3;
+        const icons     = ['🔎', '📊', '🧪'];
+
+        const actions = isLow ? [
+          `${name} (${ticker}) ${gl} ${Math.abs(changePct).toFixed(2)}% over the past week. Before looking for explanations, note whether that surprises you — and why.`,
+          `Research what ${name} actually does. Write a single sentence describing its core business in your own words.`,
+          `The key metric for ${sector} companies is: ${content.keyMetric}`,
+          `The main risk for ${sector} companies is: ${content.keyRisk}`,
+          `Read one news article about ${name} from this week. Does anything connect to the ${direction} price movement?`,
+        ] : isHigh ? [
+          `${name} (${ticker}) moved ${direction} this week. Reconstruct the narrative: which specific news events or macro factors best explain this move? Are there any that seem to contradict it?`,
+          `Key metric for ${sector}: ${content.keyMetric} Evaluate where ${ticker} currently stands on this metric and whether its valuation is justified given that reading.`,
+          `Main risk: ${content.keyRisk} Model the downside: if this risk fully materialized, what is the fair value of ${ticker} — and how far is that from today's price?`,
+          `What to monitor: ${content.watchFor} Which of these catalysts is most likely within the next 90 days, and what is your thesis if it occurs?`,
+        ] : [
+          `${name} (${ticker}) moved ${direction} this week. Before checking headlines, write your hypothesis: what do you think caused this movement?`,
+          `Key metric for ${sector}: ${content.keyMetric} Look up ${ticker}'s current figure on Yahoo Finance or Google Finance.`,
+          `Main risk: ${content.keyRisk} Rate how much you believe this risk is currently priced into ${ticker}'s stock price (1 = not at all, 5 = fully priced in). Justify your rating.`,
+          `What to watch: ${content.watchFor} Name one specific event you'll track over the next 30 days.`,
+        ];
+
+        return {
+          icon: icons[idx] || '📌', tag: sector,
+          title: `Step ${stepNum} — Analyze ${name} (${ticker}) — ${sector} (Week ${idx + 2})`,
+          objective: isLow
+            ? `Build genuine understanding of ${name} as a business — not just as a ticker symbol that moved ${direction} this week.`
+            : `Develop a calibrated, evidence-based view of ${name} that accounts for both the ${sector} sector's dynamics and the specific 1-week price move.`,
+          actions,
+          reflection: content.reflection,
+          why: isLow
+            ? `Deep understanding of one investment builds confidence that holds during price drops — because you understand the business, not just the chart. Broad but shallow familiarity with many stocks rarely produces the same outcome.`
+            : `Sector-level analysis reveals structural forces acting on a company that are invisible in the price chart. Understanding the ${sector} sector's specific risk drivers transforms ${ticker} from a number on a screen into a business with predictable sensitivities to real-world events.`,
+        };
+      });
+
+      // ── Final step: Synthesis ─────────────────────────────────────────────────
+      const finalStepNum = enriched.length + 3;
+      const finalStep = {
+        icon: '🎯', tag: 'Goal Setting',
+        title: `Step ${finalStepNum} — Synthesize and Set Your Next Goal (Week 4)`,
+        objective: isLow
+          ? `Consolidate what you've learned about ${listPhrase} into a concrete, forward-looking plan — not a vague intention.`
+          : isHigh
+          ? `Challenge your conclusions: what does the evidence from this pathway confirm about your original thesis — and what does it contradict?`
+          : `Use the performance data and analysis to refine your investment thesis and set a measurable next goal.`,
+        actions: isLow ? [
+          `Your best performer this week was ${best.name} (${best.ticker}) at ${fmtChange(best.changePct)}. Your weakest was ${worst.name} (${worst.ticker}) at ${fmtChange(worst.changePct)}. Write down whether this was predictable or a surprise — and why.`,
+          `Go to the My Scores tab and review your FSES baseline. Do you feel more confident now than when you started?`,
+          `Write one financial concept you now understand clearly that you didn't when you started this pathway.`,
+          `Set one specific, measurable daily habit for the next 30 days — for example: "I will check ${enriched[0].ticker}'s price and read one article in the Daily News tab every morning."`,
+        ] : isHigh ? [
+          `Review all three 1-week returns: ${enriched.map(e => `${e.ticker} ${fmtChange(e.changePct)}`).join(', ')}. Where was your analysis predictive? Where did it fail, and why?`,
+          `Retake the FSES assessment via the My Scores tab. High-efficacy users who completed counter-narrative work sometimes see a slight score decrease — that is calibration, not regression. It means your confidence is becoming more accurate.`,
+          `Identify one cognitive bias that appeared in your analysis of this portfolio. Describe specifically where it showed up and what more rigorous thinking would have looked like.`,
+          `Write a one-paragraph post-mortem: if you were constructing or analyzing this portfolio from scratch, what would you do differently?`,
+        ] : [
+          `Compare 1-week performance across your portfolio: ${enriched.map(e => `${e.ticker} ${fmtChange(e.changePct)}`).join(', ')}. Does this confirm or challenge your original thesis for each stock?`,
+          `Retake the FSES assessment in the My Scores tab. Your target is High (≥ 4.0). If unchanged, revisit the per-stock analysis steps — depth of analysis there is the most powerful efficacy-builder.`,
+          `Set one measurable, sector-specific goal for the next 30 days: something you will actively monitor about the industries you now hold.`,
+        ],
+        reflection: isLow
+          ? `Where did you feel most confident over this pathway — and where did you still feel most out of your depth? Those two answers are your exact roadmap for what comes next.`
+          : isHigh
+          ? `If a professional fund manager reviewed your analysis of ${listPhrase} and the decisions you made, what would they praise — and what would they push back on hardest?`
+          : `Your portfolio's performance this week was shaped partly by your decisions and partly by forces outside your control. Can you clearly separate which parts of the outcome belong to which category?`,
+        why: isLow
+          ? `Goal-setting research (Locke & Latham, 2002) shows that specific, written goals outperform vague intentions by a significant margin. The act of committing a goal to writing is itself a behavioral signal of growing self-belief.`
+          : `Systematic post-analysis — reviewing decisions against outcomes with explicit attention to process rather than result — is how professionals convert experience into expertise. Without it, experience simply reinforces existing biases rather than correcting them.`,
+      };
+
+      return [step1, step2, ...perStockSteps, finalStep];
+    }
+
     // ── Stock Picker Modal ─────────────────────────────────────────────────────
     function StockPickerModal({ onClose }) {
       const [query,         setQuery]         = useState('');
@@ -839,13 +1110,19 @@
       const tier = baselineFSES !== null
         ? (baselineFSES >= 4 ? 'high' : baselineFSES >= 3 ? 'moderate' : 'low')
         : 'low';
-      const plan = LEARNING_PLANS[tier];
+      const plan        = LEARNING_PLANS[tier];
+      const hasWatchlist = watchlist && watchlist.length > 0;
+      const steps       = hasWatchlist ? generatePersonalizedSteps(watchlist, tier) : plan.steps;
+      const stepCount   = steps.length;
+      const stepsKey    = hasWatchlist
+        ? 'fl_steps_' + tier + '_' + watchlist.map(s => s.ticker).sort().join('_')
+        : 'fl_steps_' + tier;
 
       const [expanded,       setExpanded]       = useState(null);
       const [showPostForm,   setShowPostForm]    = useState(false);
       const [completedSteps, setCompletedSteps] = useState(() => {
-        try { const v = localStorage.getItem('fl_steps_' + tier); if (v) return JSON.parse(v); } catch {}
-        return new Array(plan.steps.length).fill(false);
+        try { const v = localStorage.getItem(stepsKey); if (v) return JSON.parse(v); } catch {}
+        return new Array(stepCount).fill(false);
       });
       const [postAnswers, setPostAnswers] = useState(() => {
         try { const v = localStorage.getItem('fl_post_answers'); if (v) return JSON.parse(v); } catch {}
@@ -856,21 +1133,21 @@
         return null;
       });
 
-      // Sync completedSteps when tier changes (e.g. first render vs after score is set)
+      // Sync completedSteps when stepsKey changes (tier or watchlist composition changes)
       React.useEffect(() => {
-        try { const v = localStorage.getItem('fl_steps_' + tier); if (v) { setCompletedSteps(JSON.parse(v)); return; } } catch {}
-        setCompletedSteps(new Array(plan.steps.length).fill(false));
-      }, [tier]);
+        try { const v = localStorage.getItem(stepsKey); if (v) { setCompletedSteps(JSON.parse(v)); return; } } catch {}
+        setCompletedSteps(new Array(stepCount).fill(false));
+      }, [stepsKey]);
 
       if (baselineFSES === null) return null;
 
       const doneCount = completedSteps.filter(Boolean).length;
-      const allDone   = doneCount === plan.steps.length;
+      const allDone   = doneCount === stepCount;
 
       function toggleStep(i) {
         const next = completedSteps.map((v, idx) => idx === i ? !v : v);
         setCompletedSteps(next);
-        try { localStorage.setItem('fl_steps_' + tier, JSON.stringify(next)); } catch {}
+        try { localStorage.setItem(stepsKey, JSON.stringify(next)); } catch {}
       }
 
       function submitPostFSES() {
@@ -913,25 +1190,35 @@
             <span className={`text-xs font-semibold px-2 py-1 rounded ${plan.tagBg}`}>{plan.tier}</span>
           </div>
           <p className="text-xs text-gray-400 italic mb-3">Personalized based on your FSES score · Grounded in Bandura's Self-Efficacy Theory</p>
-          <p className="text-sm text-gray-600 mb-4 leading-relaxed">{plan.intro}</p>
+          <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+            {hasWatchlist ? (() => {
+              const names = watchlist.map(s => s.name || s.ticker).join(', ');
+              const intros = {
+                low:      `A score below 3.0 means financial decisions still feel uncertain — and that's exactly why this pathway starts with what you already own. Over the next 4 weeks, you'll build genuine understanding of ${names} from the ground up: what these companies do, why their sectors matter, and how to read their price movements without anxiety.`,
+                moderate: `You have a solid foundation. This pathway uses your actual holdings — ${names} — as the laboratory. Every exercise is grounded in real companies you chose and real data from the past week, not generic examples.`,
+                high:     `Strong confidence is the starting point, not the destination. This pathway uses ${names} to test whether your confidence is calibrated. Every step asks you to go deeper, argue the opposite side, and quantify what you actually know versus what you're assuming.`,
+              };
+              return intros[tier];
+            })() : plan.intro}
+          </p>
 
           {/* Progress bar */}
           <div className="mb-5">
             <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-              <span>{doneCount} of {plan.steps.length} steps complete</span>
+              <span>{doneCount} of {stepCount} steps complete</span>
               {allDone && <span className="text-green-600 font-semibold">All done!</span>}
             </div>
             <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className={`h-2.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
-                style={{ width: `${(doneCount / plan.steps.length) * 100}%` }}
+                style={{ width: `${(doneCount / stepCount) * 100}%` }}
               />
             </div>
           </div>
 
           {/* Steps — accordion with checkboxes */}
           <div className="space-y-3">
-            {plan.steps.map((step, i) => (
+            {steps.map((step, i) => (
               <div key={i} className={`border rounded-lg overflow-hidden transition-colors ${completedSteps[i] ? 'border-green-200' : 'border-gray-200'}`}>
                 <div className="flex items-stretch">
                   {/* Checkbox zone */}
