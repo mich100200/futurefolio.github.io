@@ -57,6 +57,35 @@
       };
     }
 
+    // ── Contextual Tooltip ────────────────────────────────────────────────────
+    function Tooltip({ tip, children }) {
+      const [show, setShow] = useState(false);
+      return (
+        <span className="relative inline-block cursor-help"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          {children}
+          {show && (
+            <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none whitespace-normal" style={{minWidth:'180px'}}>
+              {tip}
+              <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" style={{width:0,height:0}} />
+            </span>
+          )}
+        </span>
+      );
+    }
+
+    const SENTIMENT_TIPS = {
+      'Bullish':          'Analysts and news sources have a positive outlook on this stock — they expect the price to rise.',
+      'Somewhat-Bullish': 'Mild positive sentiment — more good news than bad, but not strongly so.',
+      'Somewhat_Bullish': 'Mild positive sentiment — more good news than bad, but not strongly so.',
+      'Neutral':          'No strong directional sentiment — news and analyst views are evenly balanced.',
+      'Somewhat-Bearish': 'Mild negative sentiment — more concern than confidence in this stock\'s near-term performance.',
+      'Somewhat_Bearish': 'Mild negative sentiment — more concern than confidence in this stock\'s near-term performance.',
+      'Bearish':          'Analysts and news sources have a negative outlook on this stock — they expect the price to fall.',
+    };
+
     // ── Mini Sparkline Chart ───────────────────────────────────────────────────
     function Sparkline({ prices, positive }) {
       const canvasRef = useRef(null);
@@ -89,47 +118,131 @@
 
     // ── FSES Assessment Modal ──────────────────────────────────────────────────
     function AssessmentModal({ onClose }) {
-      const [answers, setAnswers] = useState({ q1: 0, q2: 0, q3: 0 });
-      const keys        = ['q1', 'q2', 'q3'];
-      const allAnswered = keys.every(k => answers[k] > 0);
+      const [step,           setStep]           = useState(0); // 0=screener, 1-3=questions
+      const [isFinanceMajor, setIsFinanceMajor] = useState(false);
+      const [hasBrokerage,   setHasBrokerage]   = useState(false);
+      const [answers,        setAnswers]         = useState({ q1: 0, q2: 0, q3: 0 });
+
+      const keys          = ['q1', 'q2', 'q3'];
+      const currentKey    = step > 0 ? keys[step - 1] : null;
+      const currentAnswer = currentKey ? answers[currentKey] : 0;
+      const canAdvance    = step === 0 || currentAnswer > 0;
+
+      const handleNext = () => {
+        if (step < 3) {
+          setStep(step + 1);
+        } else {
+          const avg = (answers.q1 + answers.q2 + answers.q3) / 3;
+          onClose(avg, { isFinanceMajor, hasBrokerage });
+        }
+      };
 
       return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full">
-            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Financial Litmus</h2>
-            <p className="mb-6 text-gray-600 text-sm">
-              Before you begin, answer three brief questions about your financial confidence.
-              There are no right or wrong answers.
-            </p>
-            {FSES_QUESTIONS.map((q, i) => (
-              <div key={i} className="mb-5">
-                <p className="text-sm font-medium text-gray-800 mb-2">{i + 1}. {q}</p>
-                <div className="flex gap-2 justify-between">
+            <h2 className="text-2xl font-bold mb-1 text-blue-600">Welcome to Financial Litmus</h2>
+
+            {/* ── Step 0: Screener ── */}
+            {step === 0 && (
+              <>
+                <p className="text-gray-500 text-sm mb-6">
+                  Before we begin, answer two quick background questions. Your responses
+                  help contextualize your results — there are no right or wrong answers.
+                </p>
+                <div className="space-y-4 mb-8">
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={isFinanceMajor}
+                      onChange={e => setIsFinanceMajor(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-500 flex-shrink-0"
+                    />
+                    <span className="text-sm text-gray-700 group-hover:text-gray-900 leading-snug">
+                      I am currently studying or hold a degree in <strong>finance, accounting, or economics</strong>.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={hasBrokerage}
+                      onChange={e => setHasBrokerage(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-500 flex-shrink-0"
+                    />
+                    <span className="text-sm text-gray-700 group-hover:text-gray-900 leading-snug">
+                      I currently have an <strong>active brokerage account</strong> (e.g., Robinhood, Fidelity, Schwab, TD Ameritrade).
+                    </span>
+                  </label>
+                </div>
+                <button
+                  onClick={handleNext}
+                  className="w-full py-2 rounded font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-all"
+                >
+                  Continue →
+                </button>
+              </>
+            )}
+
+            {/* ── Steps 1–3: FSES Questions ── */}
+            {step > 0 && (
+              <>
+                {/* Progress bar */}
+                <div className="mb-6 mt-2">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                    <span className="font-medium">Question {step} of {FSES_QUESTIONS.length}</span>
+                    <span>{Math.round((step / FSES_QUESTIONS.length) * 100)}% complete</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${(step / FSES_QUESTIONS.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-500 mb-1 italic">
+                  Rate your agreement with the following statement:
+                </p>
+                <p className="text-base font-semibold text-gray-800 mb-5 leading-snug">
+                  "{FSES_QUESTIONS[step - 1]}"
+                </p>
+
+                <div className="flex gap-2 justify-between mb-2">
                   {[1, 2, 3, 4, 5].map(v => (
                     <button key={v}
-                      onClick={() => setAnswers(prev => ({ ...prev, [keys[i]]: v }))}
-                      className={`w-10 h-10 rounded-full text-sm font-semibold border-2 transition-all ${
-                        answers[keys[i]] === v
-                          ? 'bg-blue-500 text-white border-blue-500'
+                      onClick={() => setAnswers(prev => ({ ...prev, [currentKey]: v }))}
+                      className={`flex-1 h-11 rounded-full text-sm font-semibold border-2 transition-all ${
+                        currentAnswer === v
+                          ? 'bg-blue-500 text-white border-blue-500 scale-105'
                           : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
                       }`}
                     >{v}</button>
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <div className="flex justify-between text-xs text-gray-400 mb-8">
                   <span>Strongly Disagree</span><span>Strongly Agree</span>
                 </div>
-              </div>
-            ))}
-            <button
-              onClick={() => onClose((answers.q1 + answers.q2 + answers.q3) / 3)}
-              disabled={!allAnswered}
-              className={`w-full mt-2 py-2 rounded font-semibold transition-all ${
-                allAnswered ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              Continue
-            </button>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setStep(step - 1)}
+                    className="px-4 py-2 rounded border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition-all"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    disabled={!canAdvance}
+                    className={`flex-1 py-2 rounded font-semibold transition-all ${
+                      canAdvance
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {step === FSES_QUESTIONS.length ? 'See My Results' : 'Next →'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       );
@@ -168,6 +281,8 @@
       const [showDropdown,  setShowDropdown]  = useState(false);
       const searchTimerRef     = useRef(null);
       const skipNextSearchRef  = useRef(false);
+      const [showReflection,   setShowReflection] = useState(false);
+      const [reasoning,        setReasoning]       = useState('');
 
       const MAX = 3;
       const canAdd = preview && picks.length < MAX && !picks.find(p => p.ticker === preview.ticker);
@@ -275,7 +390,7 @@
 
       return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full relative overflow-hidden">
             <h2 className="text-2xl font-bold mb-1 text-blue-600">Build Your Watchlist</h2>
             <p className="text-gray-500 text-sm mb-4">
               Pick from popular stocks below, or search by company name / ticker.
@@ -413,7 +528,7 @@
             </div>
 
             <button
-              onClick={() => onClose(picks)}
+              onClick={() => picks.length === MAX && setShowReflection(true)}
               disabled={picks.length < MAX}
               className={`w-full py-2 rounded font-semibold transition-all ${
                 picks.length === MAX
@@ -421,8 +536,59 @@
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {picks.length < MAX ? `Select ${MAX - picks.length} more stock${MAX - picks.length !== 1 ? 's' : ''}` : "Let's Begin"}
+              {picks.length < MAX ? `Select ${MAX - picks.length} more stock${MAX - picks.length !== 1 ? 's' : ''}` : "Let's Begin →"}
             </button>
+
+            {/* ── Reflection overlay ── */}
+            {showReflection && (
+              <div className="absolute inset-0 bg-white rounded-lg p-8 flex flex-col">
+                <h2 className="text-xl font-bold mb-1 text-blue-600">Before You Begin</h2>
+                <p className="text-gray-500 text-sm mb-5">
+                  Stating your reasoning before seeing results strengthens what you learn from the experience.
+                  This is optional — skip it if you prefer.
+                </p>
+
+                {/* Mini pick summary */}
+                <div className="flex gap-2 mb-5">
+                  {picks.map(p => (
+                    <div key={p.ticker} className="flex-1 border border-blue-100 rounded-lg p-3 text-center bg-blue-50">
+                      <p className="text-sm font-bold text-blue-700">{p.ticker}</p>
+                      {p.name && <p className="text-xs text-gray-400 mt-0.5 truncate">{p.name}</p>}
+                    </div>
+                  ))}
+                </div>
+
+                <label className="text-sm font-semibold text-gray-700 mb-1.5">
+                  Why did you choose these 3 stocks?
+                  <span className="font-normal text-gray-400 ml-1">(optional)</span>
+                </label>
+                <textarea
+                  value={reasoning}
+                  onChange={e => setReasoning(e.target.value)}
+                  placeholder="e.g., I chose Apple because I use their products every day. Tesla because I believe in clean energy. McDonald's because I know it as a stable business..."
+                  className="border rounded-lg p-3 text-sm text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  rows={4}
+                />
+                <p className="text-xs text-gray-400 mt-1.5 mb-6 leading-relaxed">
+                  Reflecting before seeing results is a core component of Bandura's mastery experience framework — it builds the habit of deliberate, reasoned decision-making.
+                </p>
+
+                <div className="flex gap-2 mt-auto">
+                  <button
+                    onClick={() => onClose(picks, '')}
+                    className="px-4 py-2 border border-gray-200 rounded text-gray-500 text-sm hover:bg-gray-50 transition-all"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => onClose(picks, reasoning)}
+                    className="flex-1 py-2 rounded font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-all"
+                  >
+                    Let's Begin →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -439,17 +605,23 @@
         <div className="bg-white shadow rounded p-5 flex flex-col gap-3">
           <div className="flex items-start justify-between">
             <div>
-              <span className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded mb-1">{stock.ticker}</span>
+              <Tooltip tip="A ticker symbol is a short abbreviation (1–5 letters) that uniquely identifies a publicly traded company on a stock exchange. For example, AAPL represents Apple Inc.">
+                <span className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded mb-1">{stock.ticker}</span>
+              </Tooltip>
               {stock.name && <p className="text-xs text-gray-400 mb-1">{stock.name}</p>}
               <p className="text-2xl font-bold text-gray-800">${stock.current.toFixed(2)}</p>
-              <p className={`text-sm font-semibold ${positive ? 'text-green-600' : 'text-red-500'}`}>
-                {positive ? '+' : ''}{dollarChange.toFixed(2)} ({positive ? '+' : ''}{stock.changePct.toFixed(2)}%)
-              </p>
+              <Tooltip tip="The change in this stock's closing price over the last 7 trading days. A positive number means the stock gained value; negative means it lost value.">
+                <p className={`text-sm font-semibold ${positive ? 'text-green-600' : 'text-red-500'}`}>
+                  {positive ? '+' : ''}{dollarChange.toFixed(2)} ({positive ? '+' : ''}{stock.changePct.toFixed(2)}%)
+                </p>
+              </Tooltip>
             </div>
             <Sparkline prices={stock.prices} positive={positive} />
           </div>
           <div className="text-xs text-gray-400 border-t pt-2 flex justify-between">
-            <span>7 days ago: <strong className="text-gray-600">${stock.weekAgo.toFixed(2)}</strong></span>
+            <Tooltip tip="The closing price 7 trading days ago — used as the starting point for the performance calculation above.">
+              <span>7 days ago: <strong className="text-gray-600">${stock.weekAgo.toFixed(2)}</strong></span>
+            </Tooltip>
             <span>{fmt(stock.weekAgoDate)} → {fmt(stock.currentDate)}</span>
           </div>
         </div>
@@ -663,13 +835,75 @@
     };
 
     // ── Adaptive Learning Plan Component ──────────────────────────────────────
-    function AdaptiveLearningPlan({ baselineFSES }) {
-      const [expanded, setExpanded] = useState(null);
+    function AdaptiveLearningPlan({ baselineFSES, watchlist }) {
+      const tier = baselineFSES !== null
+        ? (baselineFSES >= 4 ? 'high' : baselineFSES >= 3 ? 'moderate' : 'low')
+        : 'low';
+      const plan = LEARNING_PLANS[tier];
+
+      const [expanded,       setExpanded]       = useState(null);
+      const [showPostForm,   setShowPostForm]    = useState(false);
+      const [completedSteps, setCompletedSteps] = useState(() => {
+        try { const v = localStorage.getItem('fl_steps_' + tier); if (v) return JSON.parse(v); } catch {}
+        return new Array(plan.steps.length).fill(false);
+      });
+      const [postAnswers, setPostAnswers] = useState(() => {
+        try { const v = localStorage.getItem('fl_post_answers'); if (v) return JSON.parse(v); } catch {}
+        return {};
+      });
+      const [postScore, setPostScore] = useState(() => {
+        try { const v = localStorage.getItem('fl_post_fses'); if (v) return parseFloat(v); } catch {}
+        return null;
+      });
+
+      // Sync completedSteps when tier changes (e.g. first render vs after score is set)
+      React.useEffect(() => {
+        try { const v = localStorage.getItem('fl_steps_' + tier); if (v) { setCompletedSteps(JSON.parse(v)); return; } } catch {}
+        setCompletedSteps(new Array(plan.steps.length).fill(false));
+      }, [tier]);
 
       if (baselineFSES === null) return null;
 
-      const tier = baselineFSES >= 4 ? 'high' : baselineFSES >= 3 ? 'moderate' : 'low';
-      const plan = LEARNING_PLANS[tier];
+      const doneCount = completedSteps.filter(Boolean).length;
+      const allDone   = doneCount === plan.steps.length;
+
+      function toggleStep(i) {
+        const next = completedSteps.map((v, idx) => idx === i ? !v : v);
+        setCompletedSteps(next);
+        try { localStorage.setItem('fl_steps_' + tier, JSON.stringify(next)); } catch {}
+      }
+
+      function submitPostFSES() {
+        const vals = FSES_QUESTIONS.map((_, i) => Number(postAnswers[i] || 0));
+        if (vals.some(v => !v)) return;
+        const avg     = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const rounded = Math.round(avg * 10) / 10;
+        setPostScore(rounded);
+        setShowPostForm(false);
+        try {
+          localStorage.setItem('fl_post_fses', String(rounded));
+          localStorage.setItem('fl_post_answers', JSON.stringify(postAnswers));
+        } catch {}
+      }
+
+      const fsesLabel = (score) => {
+        if (score >= 4) return { label: 'High',     color: 'text-green-600' };
+        if (score >= 3) return { label: 'Moderate', color: 'text-yellow-600' };
+        return               { label: 'Low',       color: 'text-red-500' };
+      };
+
+      // Investment performance from saved allocation
+      const allocKey  = watchlist && watchlist.length > 0
+        ? 'fl_alloc_' + watchlist.map(s => s.ticker).sort().join('_')
+        : null;
+      const allocData = (() => {
+        if (!allocKey) return null;
+        try { const v = localStorage.getItem(allocKey); return v ? JSON.parse(v) : null; } catch { return null; }
+      })();
+      const isAllocLocked = (() => {
+        if (!allocKey) return false;
+        try { return localStorage.getItem(allocKey + '_locked') === 'true'; } catch { return false; }
+      })();
 
       return (
         <div className={`bg-white shadow rounded p-6 border-t-4 ${plan.borderColor}`}>
@@ -679,33 +913,58 @@
             <span className={`text-xs font-semibold px-2 py-1 rounded ${plan.tagBg}`}>{plan.tier}</span>
           </div>
           <p className="text-xs text-gray-400 italic mb-3">Personalized based on your FSES score · Grounded in Bandura's Self-Efficacy Theory</p>
-          <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.intro}</p>
+          <p className="text-sm text-gray-600 mb-4 leading-relaxed">{plan.intro}</p>
 
-          {/* Steps — collapsible accordion */}
+          {/* Progress bar */}
+          <div className="mb-5">
+            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+              <span>{doneCount} of {plan.steps.length} steps complete</span>
+              {allDone && <span className="text-green-600 font-semibold">All done!</span>}
+            </div>
+            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-2.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${(doneCount / plan.steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Steps — accordion with checkboxes */}
           <div className="space-y-3">
             {plan.steps.map((step, i) => (
-              <div key={i} className="border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => setExpanded(expanded === i ? null : i)}
-                  className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{step.icon}</span>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">{step.title}</p>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${plan.tagBg}`}>{step.tag}</span>
+              <div key={i} className={`border rounded-lg overflow-hidden transition-colors ${completedSteps[i] ? 'border-green-200' : 'border-gray-200'}`}>
+                <div className="flex items-stretch">
+                  {/* Checkbox zone */}
+                  <button
+                    onClick={() => toggleStep(i)}
+                    className={`flex-shrink-0 flex items-center justify-center w-12 border-r transition-colors ${completedSteps[i] ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
+                    title={completedSteps[i] ? 'Mark incomplete' : 'Mark complete'}
+                  >
+                    {completedSteps[i]
+                      ? <span className="text-green-600 text-lg font-bold">✓</span>
+                      : <span className="w-5 h-5 rounded border-2 border-gray-300 inline-block" />
+                    }
+                  </button>
+
+                  {/* Accordion toggle */}
+                  <button
+                    onClick={() => setExpanded(expanded === i ? null : i)}
+                    className={`flex-1 text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${completedSteps[i] ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{step.icon}</span>
+                      <div>
+                        <p className={`text-sm font-semibold ${completedSteps[i] ? 'line-through text-gray-400' : 'text-gray-800'}`}>{step.title}</p>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${plan.tagBg}`}>{step.tag}</span>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-gray-400 text-sm flex-shrink-0">{expanded === i ? '▲' : '▼'}</span>
-                </button>
+                    <span className="text-gray-400 text-sm flex-shrink-0">{expanded === i ? '▲' : '▼'}</span>
+                  </button>
+                </div>
+
                 {expanded === i && (
                   <div className="px-4 pb-5 pt-3 bg-gray-50 border-t space-y-4">
-                    {/* Simple format (moderate / high tiers) */}
-                    {step.desc && (
-                      <p className="text-sm text-gray-700 leading-relaxed">{step.desc}</p>
-                    )}
-
-                    {/* Rich format (low tier) */}
+                    {step.desc && <p className="text-sm text-gray-700 leading-relaxed">{step.desc}</p>}
                     {step.objective && (
                       <div>
                         <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Objective</p>
@@ -718,9 +977,7 @@
                         <ul className="space-y-2.5">
                           {step.actions.map((action, j) => (
                             <li key={j} className="flex items-start gap-3 text-sm text-gray-700">
-                              <span className={`mt-0.5 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${plan.tagBg}`}>
-                                {j + 1}
-                              </span>
+                              <span className={`mt-0.5 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${plan.tagBg}`}>{j + 1}</span>
                               <span className="leading-relaxed">{action}</span>
                             </li>
                           ))}
@@ -739,11 +996,169 @@
                         <p className="text-xs text-gray-600 leading-relaxed">{step.why}</p>
                       </div>
                     )}
+                    <div className="pt-1">
+                      <button
+                        onClick={() => { toggleStep(i); setExpanded(null); }}
+                        className={`text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${completedSteps[i] ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                      >
+                        {completedSteps[i] ? 'Mark as Incomplete' : 'Mark as Complete ✓'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             ))}
           </div>
+
+          {/* Investment Performance — unlocked after all steps done */}
+          {allDone && allocData && isAllocLocked && watchlist && watchlist.length > 0 && (() => {
+            const rows = watchlist.map(s => {
+              const allocated    = Number(allocData[s.ticker] || 0);
+              const changePct    = s.changePct || 0;
+              const currentValue = allocated * (1 + changePct / 100);
+              const gain         = currentValue - allocated;
+              return { ticker: s.ticker, name: s.name || s.ticker, allocated, currentValue, gain, changePct };
+            });
+            const totalAllocated = rows.reduce((sum, r) => sum + r.allocated, 0);
+            const totalCurrent   = rows.reduce((sum, r) => sum + r.currentValue, 0);
+            const totalGain      = totalCurrent - totalAllocated;
+            return (
+              <div className="mt-6 border-t pt-5">
+                <h4 className="text-base font-bold text-gray-800 mb-1">Your 1-Week Investment Performance</h4>
+                <p className="text-xs text-gray-400 mb-1">
+                  If you had invested your virtual $1,000 one week ago in these proportions, here's what would have happened.
+                </p>
+                {watchlist[0] && watchlist[0].weekAgoDate && (
+                  <p className="text-xs text-blue-500 font-medium mb-4">
+                    Period: {watchlist[0].weekAgoDate} → {watchlist[0].currentDate} (7 trading days of real market data)
+                  </p>
+                )}
+                <div className="space-y-3">
+                  {rows.map(r => (
+                    <div key={r.ticker} className="bg-gray-50 border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{r.ticker}</span>
+                          <span className="text-sm text-gray-700 truncate max-w-32">{r.name}</span>
+                        </div>
+                        <span className={`text-sm font-bold ${r.gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {r.gain >= 0 ? '+' : ''}${r.gain.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>Invested: <strong>${r.allocated.toFixed(2)}</strong></span>
+                        <span>Value now: <strong>${r.currentValue.toFixed(2)}</strong></span>
+                        <span className={`font-semibold ${r.changePct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {r.changePct >= 0 ? '+' : ''}{r.changePct.toFixed(2)}% (7d)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className={`rounded-lg p-4 flex items-center justify-between ${totalGain >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-0.5">Total Portfolio Value</p>
+                      <p className="text-2xl font-bold text-gray-800">${totalCurrent.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500 mb-0.5">Overall Gain / Loss</p>
+                      <p className={`text-xl font-bold ${totalGain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {totalGain >= 0 ? '+' : ''}${totalGain.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Post-FSES Assessment — unlocked after all steps done */}
+          {allDone && (
+            <div className="mt-6 border-t pt-5">
+              <h4 className="text-base font-bold text-gray-800 mb-1">Post-Learning FSES Assessment</h4>
+              <p className="text-sm text-gray-500 mb-4">
+                Now that you've completed the learning pathway, retake the self-efficacy assessment to see how your confidence has grown.
+              </p>
+
+              {postScore !== null ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Before</p>
+                      <p className="text-3xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(baselineFSES).color}`}>{fsesLabel(baselineFSES).label}</p>
+                    </div>
+                    <div className={`rounded-lg p-4 flex flex-col items-center justify-center border ${(postScore - baselineFSES) >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <p className="text-xs text-gray-400 mb-1">Change</p>
+                      <p className={`text-3xl font-bold ${(postScore - baselineFSES) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {(postScore - baselineFSES) >= 0 ? '+' : ''}{(postScore - baselineFSES).toFixed(1)}
+                      </p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">After</p>
+                      <p className="text-3xl font-bold text-blue-700">{postScore.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(postScore).color}`}>{fsesLabel(postScore).label}</p>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                    <p className="text-sm text-blue-900 leading-relaxed">
+                      {postScore > baselineFSES
+                        ? `Your financial self-efficacy improved by ${(postScore - baselineFSES).toFixed(1)} points. Engaging with real market data and structured reflection is working — keep building on this momentum.`
+                        : postScore === baselineFSES
+                        ? "Your score held steady. That's normal — self-efficacy shifts gradually. Continue working through the activities and retake to track your progress over time."
+                        : "Your score dipped slightly. This can happen when new knowledge reveals gaps you weren't aware of before — that's actually a sign of growth. Keep going."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPostScore(null);
+                      setPostAnswers({});
+                      setShowPostForm(true);
+                      try { localStorage.removeItem('fl_post_fses'); localStorage.removeItem('fl_post_answers'); } catch {}
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  >Retake assessment</button>
+                </div>
+              ) : showPostForm ? (
+                <div className="space-y-4">
+                  {FSES_QUESTIONS.map((q, i) => (
+                    <div key={i} className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Question {i + 1} of {FSES_QUESTIONS.length}</p>
+                      <p className="text-sm font-medium text-gray-800 mb-3">"{q}"</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {[1,2,3,4,5].map(val => (
+                          <button
+                            key={val}
+                            onClick={() => setPostAnswers(prev => ({ ...prev, [i]: val }))}
+                            className={`w-10 h-10 rounded-lg border-2 text-sm font-bold transition-colors ${postAnswers[i] === val ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'}`}
+                          >{val}</button>
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                        <span>Not at all confident</span>
+                        <span>Completely confident</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={submitPostFSES}
+                      disabled={FSES_QUESTIONS.some((_, i) => !postAnswers[i])}
+                      className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >See My Results</button>
+                    <button
+                      onClick={() => setShowPostForm(false)}
+                      className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPostForm(true)}
+                  className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                >Take Post-Assessment →</button>
+              )}
+            </div>
+          )}
 
           <p className="text-xs text-gray-400 mt-5 italic">
             This plan adapts as your confidence grows. Retake the FSES assessment at any time to unlock a new path.
@@ -752,8 +1167,180 @@
       );
     }
 
+    // ── Allocation Section ────────────────────────────────────────────────────
+    function AllocationSection({ watchlist }) {
+      const BUDGET     = 1000;
+      const storeKey   = 'fl_alloc_' + watchlist.map(s => s.ticker).sort().join('_');
+      const lockedKey  = storeKey + '_locked';
+
+      const [amounts, setAmounts] = useState(() => {
+        try { const v = localStorage.getItem(storeKey); if (v) return JSON.parse(v); } catch {}
+        return Object.fromEntries(watchlist.map(s => [s.ticker, '']));
+      });
+      const [locked, setLocked] = useState(() => {
+        try { return localStorage.getItem(lockedKey) === 'true'; } catch { return false; }
+      });
+
+      useEffect(() => { try { localStorage.setItem(storeKey,  JSON.stringify(amounts)); } catch {} }, [JSON.stringify(amounts)]);
+      useEffect(() => { try { localStorage.setItem(lockedKey, String(locked));           } catch {} }, [locked]);
+
+      const total   = watchlist.reduce((sum, s) => sum + (Number(amounts[s.ticker]) || 0), 0);
+      const remaining = BUDGET - total;
+      const isOver    = total > BUDGET;
+      const canConfirm = total > 0 && !isOver;
+
+      const update = (ticker, val) => {
+        const num = val === '' ? '' : Math.max(0, Number(val));
+        setAmounts(prev => ({ ...prev, [ticker]: num }));
+      };
+
+      // ── Confirmed summary ──
+      if (locked) {
+        return (
+          <div className="bg-white shadow rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-800">Your Portfolio Allocation</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  ${total.toFixed(0)} invested one week ago · {remaining > 0 ? `$${remaining.toFixed(0)} held as cash · ` : ''}complete the learning pathway to see results
+                </p>
+              </div>
+              <button
+                onClick={() => setLocked(false)}
+                className="text-xs text-blue-500 border border-blue-200 rounded px-2.5 py-1 hover:bg-blue-50 transition-all"
+              >
+                Edit
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {watchlist.map(s => {
+                const amt    = Number(amounts[s.ticker]) || 0;
+                const pct    = total > 0 ? (amt / total) * 100 : 0;
+                const shares = amt > 0 ? amt / s.current : 0;
+                return (
+                  <div key={s.ticker}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <Tooltip tip="A ticker symbol is a short abbreviation that uniquely identifies a publicly traded company on a stock exchange.">
+                          <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{s.ticker}</span>
+                        </Tooltip>
+                        {s.name && <span className="text-sm text-gray-600">{s.name}</span>}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-gray-800">${amt.toFixed(0)}</span>
+                        <span className="text-xs text-gray-400 ml-2">≈ {shares.toFixed(3)} shares</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">{pct.toFixed(1)}% of invested portfolio</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-3 border-t flex justify-between items-center">
+              <span className="text-sm text-gray-500">Total invested</span>
+              <span className="text-sm font-bold text-gray-800">${total.toFixed(0)} <span className="font-normal text-gray-400">/ $1,000</span></span>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Input view ──
+      return (
+        <div className="bg-white shadow rounded-lg p-5">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">Allocate Your Virtual $1,000</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Imagine you invested this money one week ago. Decide how to split it across your stocks — then complete the learning pathway to see how you would have done.
+              </p>
+            </div>
+            <span className={`text-sm font-bold flex-shrink-0 ml-4 ${isOver ? 'text-red-500' : 'text-gray-600'}`}>
+              {isOver ? `-$${(total - BUDGET).toFixed(0)} over` : `$${remaining.toFixed(0)} left`}
+            </span>
+          </div>
+
+          {/* Budget progress bar */}
+          <div className="w-full bg-gray-100 rounded-full h-2 mt-3 mb-5">
+            <div
+              className={`h-2 rounded-full transition-all duration-200 ${isOver ? 'bg-red-400' : 'bg-blue-500'}`}
+              style={{ width: `${Math.min(100, (total / BUDGET) * 100)}%` }}
+            />
+          </div>
+
+          <div className="space-y-3 mb-5">
+            {watchlist.map(s => {
+              const amt    = Number(amounts[s.ticker]) || 0;
+              const shares = amt > 0 ? amt / s.current : 0;
+              const pct    = total > 0 ? (amt / total) * 100 : 0;
+              return (
+                <div key={s.ticker} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Tooltip tip="A ticker symbol is a short abbreviation that uniquely identifies a publicly traded company on a stock exchange.">
+                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{s.ticker}</span>
+                      </Tooltip>
+                      {s.name && <span className="text-sm font-medium text-gray-700">{s.name}</span>}
+                    </div>
+                    <Tooltip tip="The most recent closing price per share for this stock.">
+                      <span className="text-xs text-gray-400 cursor-help border-b border-dashed border-gray-300">${s.current.toFixed(2)} / share</span>
+                    </Tooltip>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-400 font-medium text-sm">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={BUDGET}
+                      step="10"
+                      value={amounts[s.ticker]}
+                      onChange={e => update(s.ticker, e.target.value)}
+                      placeholder="0"
+                      className="border rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-300 text-gray-800"
+                    />
+                    {amt > 0 && (
+                      <span className="text-xs text-gray-500">
+                        <Tooltip tip="The number of shares you would receive for this dollar amount at the current price. Fractional shares are shown since this is a virtual portfolio.">
+                          <span className="border-b border-dashed border-gray-300">≈ {shares.toFixed(3)} shares</span>
+                        </Tooltip>
+                        {total > 0 && (
+                          <span className="ml-2 text-gray-400">({pct.toFixed(0)}%)</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => canConfirm && setLocked(true)}
+            disabled={!canConfirm}
+            className={`w-full py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              canConfirm
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : isOver
+                ? 'bg-red-100 text-red-500 cursor-not-allowed'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {total === 0
+              ? 'Enter amounts to allocate'
+              : isOver
+              ? `Over budget by $${(total - BUDGET).toFixed(0)} — reduce to continue`
+              : 'Confirm Allocation'}
+          </button>
+        </div>
+      );
+    }
+
     // ── Scores Tab ─────────────────────────────────────────────────────────────
-    function ScoresTab({ baselineFSES }) {
+    function ScoresTab({ baselineFSES, participantFlags, watchlist }) {
       const fsesInterpret = (score) => {
         if (score >= 4) return { label: 'High Self-Efficacy',     color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
         if (score >= 3) return { label: 'Moderate Self-Efficacy', color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' };
@@ -767,24 +1354,42 @@
             <p className="text-gray-500 text-sm mb-5">Recorded at the start of your session.</p>
             {baselineFSES !== null ? (() => {
               const interp = fsesInterpret(baselineFSES);
+              const flagged = participantFlags && (participantFlags.isFinanceMajor || participantFlags.hasBrokerage);
+              const flagDetails = participantFlags ? [
+                participantFlags.isFinanceMajor && 'finance / accounting background',
+                participantFlags.hasBrokerage   && 'active brokerage account',
+              ].filter(Boolean) : [];
               return (
-                <div className={`border rounded p-5 flex items-center gap-5 ${interp.bg}`}>
-                  <div className="text-center min-w-fit">
-                    <p className="text-5xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
-                    <p className="text-sm text-gray-400 mt-1">out of 5</p>
+                <>
+                  <div className={`border rounded p-5 flex items-center gap-5 ${interp.bg}`}>
+                    <div className="text-center min-w-fit">
+                      <p className="text-5xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className="text-sm text-gray-400 mt-1">out of 5</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-bold mb-1 ${interp.color}`}>{interp.label}</p>
+                      <p className="text-sm text-gray-600">
+                        {baselineFSES >= 4
+                          ? 'You approach financial decisions with strong confidence and initiative. The goal is to ensure that confidence is well-founded and continues to be refined through experience.'
+                          : baselineFSES >= 3
+                          ? 'You have a reasonable baseline of financial confidence but still second-guess yourself at times. Structured exposure to real financial scenarios can help close that gap.'
+                          : 'You tend to avoid or defer financial decisions due to low confidence. Building foundational knowledge and celebrating small wins can significantly shift this over time.'
+                        }
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-lg font-bold mb-1 ${interp.color}`}>{interp.label}</p>
-                    <p className="text-sm text-gray-600">
-                      {baselineFSES >= 4
-                        ? 'You approach financial decisions with strong confidence and initiative. The goal is to ensure that confidence is well-founded and continues to be refined through experience.'
-                        : baselineFSES >= 3
-                        ? 'You have a reasonable baseline of financial confidence but still second-guess yourself at times. Structured exposure to real financial scenarios can help close that gap.'
-                        : 'You tend to avoid or defer financial decisions due to low confidence. Building foundational knowledge and celebrating small wins can significantly shift this over time.'
-                      }
-                    </p>
-                  </div>
-                </div>
+                  {flagged && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-3 flex items-start gap-2">
+                      <span className="text-amber-500 text-sm mt-0.5">⚑</span>
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700 mb-0.5">Research flag — Expert respondent</p>
+                        <p className="text-xs text-amber-700">
+                          This respondent reported: {flagDetails.join(' and ')}. Their FSES score may reflect domain expertise rather than general financial self-efficacy and should be interpreted accordingly in research contexts.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
               );
             })() : (
               <p className="text-gray-400 text-sm italic">Score not yet recorded.</p>
@@ -822,7 +1427,7 @@
             </div>
           </div>
 
-          <AdaptiveLearningPlan baselineFSES={baselineFSES} />
+          <AdaptiveLearningPlan baselineFSES={baselineFSES} watchlist={watchlist} />
 
           <div className="bg-white shadow rounded p-6">
             <h3 className="text-lg font-bold mb-3">Why Self-Efficacy Matters in Finance</h3>
@@ -845,29 +1450,43 @@
 
     // ── News Tab ───────────────────────────────────────────────────────────────
     function NewsTab({ watchlist }) {
-      const [articles, setArticles] = useState([]);
-      const [loading,  setLoading]  = useState(false);
-      const [error,    setError]    = useState('');
+      // newsData: { [ticker]: { articles: [], loading: bool, error: string } }
+      const [newsData, setNewsData] = useState({});
 
       const tickerKey = watchlist.map(s => s.ticker).join(',');
 
       useEffect(() => {
         if (!watchlist.length) return;
-        setLoading(true); setError('');
-        fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${tickerKey}&limit=50&apikey=${API_KEY}`)
-          .then(r => r.json())
-          .then(json => {
-if (json.Note || json.Information) throw new Error(json.Note || json.Information);
-            setArticles(json.feed || []);
-          })
-          .catch(e => setError(e.message))
-          .finally(() => setLoading(false));
+
+        // Reset and mark all tickers as loading
+        setNewsData(
+          Object.fromEntries(watchlist.map(s => [s.ticker, { articles: [], loading: true, error: '' }]))
+        );
+
+        // Fetch each ticker independently in parallel — guarantees results for every company
+        watchlist.forEach(stock => {
+          fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${stock.ticker}&limit=8&apikey=${API_KEY}`)
+            .then(r => r.json())
+            .then(json => {
+              if (json.Note || json.Information) throw new Error(json.Note || json.Information);
+              setNewsData(prev => ({
+                ...prev,
+                [stock.ticker]: { articles: json.feed || [], loading: false, error: '' },
+              }));
+            })
+            .catch(e => {
+              setNewsData(prev => ({
+                ...prev,
+                [stock.ticker]: { articles: [], loading: false, error: e.message },
+              }));
+            });
+        });
       }, [tickerKey]);
 
       const sentimentStyle = (label) => {
         if (!label) return 'bg-gray-100 text-gray-500';
-        if (label.includes('Bullish'))  return 'bg-green-100 text-green-700';
-        if (label.includes('Bearish'))  return 'bg-red-100 text-red-600';
+        if (label.includes('Bullish')) return 'bg-green-100 text-green-700';
+        if (label.includes('Bearish')) return 'bg-red-100 text-red-600';
         return 'bg-gray-100 text-gray-500';
       };
 
@@ -887,22 +1506,10 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
 
       return (
         <div className="space-y-6">
-          {loading && (
-            <div className="bg-white shadow rounded p-10 text-center text-gray-400">
-              <p className="text-lg mb-1">Loading news…</p>
-              <p className="text-xs">Fetching articles for {tickerKey}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded p-4 text-red-600 text-sm">{error}</div>
-          )}
-
-{!loading && !error && watchlist.map(stock => {
-            const norm = t => (t || '').toUpperCase().trim();
-            const stockArticles = articles
-              .filter(a => (a.ticker_sentiment || []).some(t => norm(t.ticker) === norm(stock.ticker)))
-              .slice(0, 5);
+          {watchlist.map(stock => {
+            const d        = newsData[stock.ticker] || { articles: [], loading: true, error: '' };
+            const norm     = t => (t || '').toUpperCase().trim();
+            const articles = d.articles.slice(0, 5);
 
             return (
               <div key={stock.ticker} className="bg-white shadow rounded p-5">
@@ -910,14 +1517,32 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
                 <div className="flex items-center gap-2 mb-4 pb-3 border-b">
                   <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{stock.ticker}</span>
                   {stock.name && <span className="text-sm font-semibold text-gray-700">{stock.name}</span>}
-                  <span className="text-xs text-gray-400 ml-auto">{stockArticles.length} article{stockArticles.length !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {d.loading ? 'Loading…' : `${articles.length} article${articles.length !== 1 ? 's' : ''}`}
+                  </span>
                 </div>
 
-                {stockArticles.length === 0 ? (
+                {d.loading && (
+                  <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    Fetching news for {stock.ticker}…
+                  </div>
+                )}
+
+                {!d.loading && d.error && (
+                  <p className="text-sm text-red-400 italic">{d.error}</p>
+                )}
+
+                {!d.loading && !d.error && articles.length === 0 && (
                   <p className="text-sm text-gray-400 italic">No recent news found for {stock.ticker}.</p>
-                ) : (
+                )}
+
+                {!d.loading && articles.length > 0 && (
                   <div className="space-y-3">
-                    {stockArticles.map((a, i) => {
+                    {articles.map((a, i) => {
                       const ts        = (a.ticker_sentiment || []).find(t => norm(t.ticker) === norm(stock.ticker));
                       const sentiment = ts ? ts.ticker_sentiment_label : a.overall_sentiment_label;
                       return (
@@ -940,9 +1565,11 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
                               </div>
                             </div>
                             {sentiment && (
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${sentimentStyle(sentiment)}`}>
-                                {sentiment}
-                              </span>
+                              <Tooltip tip={SENTIMENT_TIPS[sentiment] || 'Market sentiment toward this stock based on recent news analysis.'}>
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${sentimentStyle(sentiment)}`}>
+                                  {sentiment}
+                                </span>
+                              </Tooltip>
                             )}
                           </div>
                         </a>
@@ -959,21 +1586,53 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
 
     // ── App ────────────────────────────────────────────────────────────────────
     function App() {
-      const [showAssessment, setShowAssessment] = useState(true);
-      const [showStockPicker, setShowStockPicker] = useState(false);
-      const [baselineFSES, setBaselineFSES]     = useState(null);
-      const [watchlist, setWatchlist]           = useState([]);
-      const [tab, setTab]                       = useState('portfolio');
+      const ls = {
+        get: (key, fallback) => { try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; } catch { return fallback; } },
+        set: (key, val)      => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
+        clear: ()            => { Object.keys(localStorage).filter(k => k.startsWith('fl_')).forEach(k => localStorage.removeItem(k)); },
+      };
 
-      const handleAssessmentDone = (avg) => {
+      const savedFSES   = ls.get('fl_fses', null);
+      const savedList   = ls.get('fl_watchlist', []);
+
+      const [showAssessment,  setShowAssessment]  = useState(savedFSES === null);
+      const [showStockPicker, setShowStockPicker] = useState(false);
+      const [baselineFSES,    setBaselineFSES]    = useState(savedFSES);
+      const [participantFlags,setParticipantFlags]= useState(() => ls.get('fl_flags', null));
+      const [watchlist,       setWatchlist]       = useState(savedList);
+      const [stockReasoning,  setStockReasoning]  = useState(() => ls.get('fl_reasoning', ''));
+      const [tab,             setTab]             = useState(() => ls.get('fl_tab', 'portfolio'));
+
+      // Sync every piece of state to localStorage whenever it changes
+      useEffect(() => { ls.set('fl_fses',      baselineFSES);    }, [baselineFSES]);
+      useEffect(() => { ls.set('fl_flags',     participantFlags); }, [participantFlags]);
+      useEffect(() => { ls.set('fl_watchlist', watchlist);        }, [watchlist]);
+      useEffect(() => { ls.set('fl_reasoning', stockReasoning);   }, [stockReasoning]);
+      useEffect(() => { ls.set('fl_tab',       tab);              }, [tab]);
+
+      const handleAssessmentDone = (avg, flags) => {
         setBaselineFSES(avg);
+        setParticipantFlags(flags);
         setShowAssessment(false);
         setShowStockPicker(true);
       };
 
-      const handleStocksDone = (picks) => {
+      const handleStocksDone = (picks, reasoning) => {
         setWatchlist(picks);
+        setStockReasoning(reasoning || '');
         setShowStockPicker(false);
+      };
+
+      const handleReset = () => {
+        if (!window.confirm('This will erase all your saved progress and restart from the beginning. Are you sure?')) return;
+        ls.clear();
+        setBaselineFSES(null);
+        setParticipantFlags(null);
+        setWatchlist([]);
+        setStockReasoning('');
+        setTab('portfolio');
+        setShowStockPicker(false);
+        setShowAssessment(true);
       };
 
       const tabs = [
@@ -990,11 +1649,22 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
               <h1 className="text-3xl font-bold">Financial Litmus</h1>
-              {baselineFSES !== null && (
-                <span className="text-sm text-gray-500 bg-white shadow rounded px-3 py-1">
-                  FSES: <strong>{baselineFSES.toFixed(1)}</strong> / 5
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {baselineFSES !== null && (
+                  <span className="text-sm text-gray-500 bg-white shadow rounded px-3 py-1">
+                    FSES: <strong>{baselineFSES.toFixed(1)}</strong> / 5
+                  </span>
+                )}
+                {baselineFSES !== null && (
+                  <button
+                    onClick={handleReset}
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    title="Erase saved progress and restart"
+                  >
+                    Start Over
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-x-2">
@@ -1011,7 +1681,7 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-semibold">Your Watchlist</h2>
-                    <p className="text-sm text-gray-500">7-day performance using real market data</p>
+                    <p className="text-sm text-gray-500">Actual price movement over the past 7 trading days</p>
                   </div>
                   <button
                     onClick={() => setShowStockPicker(true)}
@@ -1021,6 +1691,13 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
                   </button>
                 </div>
 
+                {stockReasoning && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-1">
+                    <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">Your Investment Rationale</p>
+                    <p className="text-sm text-blue-900 italic leading-relaxed">"{stockReasoning}"</p>
+                  </div>
+                )}
+
                 {watchlist.length === 0 ? (
                   <div className="bg-white shadow rounded p-8 text-center text-gray-400">
                     <p className="text-lg mb-2">No stocks selected yet.</p>
@@ -1029,14 +1706,17 @@ if (json.Note || json.Information) throw new Error(json.Note || json.Information
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {watchlist.map(stock => <StockCard key={stock.ticker} stock={stock} />)}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {watchlist.map(stock => <StockCard key={stock.ticker} stock={stock} />)}
+                    </div>
+                    <AllocationSection watchlist={watchlist} />
+                  </>
                 )}
               </div>
             )}
 
-            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} />}
+            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} watchlist={watchlist} />}
 
             {tab === 'news' && <NewsTab watchlist={watchlist} />}
           </div>
