@@ -1627,7 +1627,7 @@
     }
 
     // ── Scores Tab ─────────────────────────────────────────────────────────────
-    function ScoresTab({ baselineFSES, participantFlags, watchlist }) {
+    function ScoresTab({ baselineFSES, participantFlags }) {
       const fsesInterpret = (score) => {
         if (score >= 4) return { label: 'High Self-Efficacy',     color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
         if (score >= 3) return { label: 'Moderate Self-Efficacy', color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' };
@@ -1713,8 +1713,6 @@
               </div>
             </div>
           </div>
-
-          <AdaptiveLearningPlan baselineFSES={baselineFSES} watchlist={watchlist} />
 
           <div className="bg-white shadow rounded p-6">
             <h3 className="text-lg font-bold mb-3">Why Self-Efficacy Matters in Finance</h3>
@@ -1923,9 +1921,10 @@
       };
 
       const tabs = [
-        { key: 'portfolio', label: 'My Portfolio' },
-        { key: 'scores',    label: 'My Scores'    },
-        { key: 'news',      label: 'Daily News'   },
+        { key: 'portfolio', label: 'My Portfolio'   },
+        { key: 'scores',    label: 'My Scores'      },
+        { key: 'learn',     label: 'Learning Path'  },
+        { key: 'news',      label: 'Daily News'     },
       ];
 
       return (
@@ -2003,7 +2002,18 @@
               </div>
             )}
 
-            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} watchlist={watchlist} />}
+            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} />}
+
+            {tab === 'learn' && (
+              baselineFSES === null ? (
+                <div className="bg-white shadow rounded p-10 text-center text-gray-400">
+                  <p className="text-lg font-medium mb-2">No assessment yet</p>
+                  <p className="text-sm">Complete the FSES assessment first — your personalized learning path will appear here.</p>
+                </div>
+              ) : (
+                <AdaptiveLearningPlan baselineFSES={baselineFSES} watchlist={watchlist} />
+              )
+            )}
 
             {tab === 'news' && <NewsTab watchlist={watchlist} />}
           </div>
