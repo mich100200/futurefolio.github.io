@@ -238,7 +238,7 @@
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {step === FSES_QUESTIONS.length ? 'See My Results' : 'Next →'}
+                    {step === FSES_QUESTIONS.length ? 'Continue →' : 'Next →'}
                   </button>
                 </div>
               </>
@@ -1132,12 +1132,28 @@
         try { const v = localStorage.getItem('fl_post_fses'); if (v) return parseFloat(v); } catch {}
         return null;
       });
+      const [elapsed, setElapsed] = useState(() => {
+        try { const v = localStorage.getItem('fl_session_start'); return v ? Date.now() - Number(v) : 0; } catch { return 0; }
+      });
 
       // Sync completedSteps when stepsKey changes (tier or watchlist composition changes)
       React.useEffect(() => {
         try { const v = localStorage.getItem(stepsKey); if (v) { setCompletedSteps(JSON.parse(v)); return; } } catch {}
         setCompletedSteps(new Array(stepCount).fill(false));
       }, [stepsKey]);
+
+      // Poll elapsed time every 30s; stop once unlocked
+      React.useEffect(() => {
+        const SESSION_MS = 20 * 60 * 1000;
+        if (elapsed >= SESSION_MS) return;
+        const id = setInterval(() => {
+          try {
+            const v = localStorage.getItem('fl_session_start');
+            if (v) setElapsed(Date.now() - Number(v));
+          } catch {}
+        }, 30000);
+        return () => clearInterval(id);
+      }, [elapsed]);
 
       if (baselineFSES === null) return null;
 
@@ -1358,12 +1374,14 @@
             );
           })()}
 
-          {/* Post-FSES Assessment — unlocked after all steps done */}
-          {allDone && (
+          {/* Post-FSES Assessment — unlocked after all steps done OR 20-minute time gate */}
+          {(allDone || elapsed >= 20 * 60 * 1000) && (
             <div className="mt-6 border-t pt-5">
               <h4 className="text-base font-bold text-gray-800 mb-1">Post-Learning FSES Assessment</h4>
               <p className="text-sm text-gray-500 mb-4">
-                Now that you've completed the learning pathway, retake the self-efficacy assessment to see how your confidence has grown.
+                {allDone
+                  ? "You've completed the learning pathway — retake the self-efficacy assessment to see how your confidence has grown."
+                  : "You've spent time with the platform and your portfolio data. Retake the self-efficacy assessment to measure any shift in your financial confidence."}
               </p>
 
               {postScore !== null ? (
@@ -1469,7 +1487,13 @@
       });
 
       useEffect(() => { try { localStorage.setItem(storeKey,  JSON.stringify(amounts)); } catch {} }, [JSON.stringify(amounts)]);
-      useEffect(() => { try { localStorage.setItem(lockedKey, String(locked));           } catch {} }, [locked]);
+      useEffect(() => {
+        try { localStorage.setItem(lockedKey, String(locked)); } catch {}
+        // Timer starts only once the $1k allocation is confirmed — stamp now if not already set
+        if (locked) {
+          try { if (!localStorage.getItem('fl_session_start')) localStorage.setItem('fl_session_start', String(Date.now())); } catch {}
+        }
+      }, [locked]);
 
       const total   = watchlist.reduce((sum, s) => sum + (Number(amounts[s.ticker]) || 0), 0);
       const remaining = BUDGET - total;
@@ -1627,7 +1651,7 @@
     }
 
     // ── Scores Tab ─────────────────────────────────────────────────────────────
-    function ScoresTab({ baselineFSES, participantFlags }) {
+    function ScoresTab({ baselineFSES, participantFlags, onGoToLearningPath }) {
       const fsesInterpret = (score) => {
         if (score >= 4) return { label: 'High Self-Efficacy',     color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
         if (score >= 3) return { label: 'Moderate Self-Efficacy', color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' };
@@ -1729,6 +1753,112 @@
               ))}
             </div>
           </div>
+
+          {/* Post-assessment status card */}
+          {baselineFSES !== null && (() => {
+            const SESSION_MS  = 20 * 60 * 1000;
+            const sessionStart = (() => { try { const v = localStorage.getItem('fl_session_start'); return v ? Number(v) : null; } catch { return null; } })();
+            const postScore    = (() => { try { const v = localStorage.getItem('fl_post_fses');    return v ? parseFloat(v) : null; } catch { return null; } })();
+            const elapsed      = sessionStart ? Date.now() - sessionStart : 0;
+            const elapsedMin   = Math.min(20, Math.floor(elapsed / 60000));
+            const unlocked     = elapsed >= SESSION_MS;
+            const pct          = Math.min(100, (elapsed / SESSION_MS) * 100);
+
+            const fsesLabel = s => s >= 4 ? { label: 'High', color: 'text-green-600' } : s >= 3 ? { label: 'Moderate', color: 'text-yellow-600' } : { label: 'Low', color: 'text-red-500' };
+
+            if (postScore !== null) {
+              const delta = postScore - baselineFSES;
+              return (
+                <div className="bg-white shadow rounded p-6">
+                  <h3 className="text-lg font-bold mb-0.5">Financial Self-Efficacy: Before &amp; After</h3>
+                  <p className="text-xs text-gray-400 mb-5">Financial Self-Efficacy Scale (FSES) · Lown et al. · Bandura's Self-Efficacy Theory</p>
+                  <div className="grid grid-cols-3 gap-3 text-center mb-4">
+                    <div className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Before</p>
+                      <p className="text-3xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(baselineFSES).color}`}>{fsesLabel(baselineFSES).label}</p>
+                    </div>
+                    <div className={`rounded-lg p-4 flex flex-col items-center justify-center border ${delta >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <p className="text-xs text-gray-400 mb-1">Change</p>
+                      <p className={`text-3xl font-bold ${delta >= 0 ? 'text-green-600' : 'text-red-500'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">After</p>
+                      <p className="text-3xl font-bold text-blue-700">{postScore.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(postScore).color}`}>{fsesLabel(postScore).label}</p>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-blue-900 leading-relaxed">
+                      {delta > 0
+                        ? `Your financial self-efficacy improved by ${delta.toFixed(1)} points. Engaging with real market data and structured reflection is working — keep building on this momentum.`
+                        : delta === 0
+                        ? "Your score held steady. That's normal — self-efficacy shifts gradually. Continue working through the activities and retake to track your progress over time."
+                        : "Your score dipped slightly. This can happen when new knowledge reveals gaps you weren't aware of before — that's actually a sign of growth. Keep going."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('This will clear your post-assessment results. Are you sure?')) {
+                        try { localStorage.removeItem('fl_post_fses'); localStorage.removeItem('fl_post_answers'); } catch {}
+                        onGoToLearningPath();
+                      }
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  >Retake assessment</button>
+                </div>
+              );
+            }
+
+            // Timer hasn't started yet — allocation not locked
+            if (!sessionStart) {
+              return (
+                <div className="bg-white shadow rounded p-6">
+                  <h3 className="text-lg font-bold mb-1">Post-Assessment</h3>
+                  <p className="text-sm text-gray-500 mb-3">
+                    The 20-minute timer starts once you confirm your $1,000 allocation in the Portfolio tab. Lock in your picks to begin.
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <span>⚠</span>
+                    <span>Allocate your $1,000 portfolio to unlock this pathway.</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white shadow rounded p-6">
+                <div className="flex items-start justify-between mb-1">
+                  <h3 className="text-lg font-bold">Post-Assessment</h3>
+                  {unlocked && <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded">Unlocked</span>}
+                </div>
+                <p className="text-sm text-gray-500 mb-4">
+                  {unlocked
+                    ? "You've been exploring for 20 minutes. Your post-assessment is ready — retake the FSES to measure how your financial confidence has shifted."
+                    : "Available after 20 minutes of exploration. Use this time to work through your portfolio, news, and learning pathway."}
+                </p>
+                {!unlocked && (
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                      <span>{elapsedMin} of 20 minutes</span>
+                      <span>{20 - elapsedMin} min remaining</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-2.5 bg-blue-400 rounded-full transition-all duration-1000" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )}
+                {unlocked && (
+                  <button
+                    onClick={onGoToLearningPath}
+                    className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Take Post-Assessment →
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       );
     }
@@ -1750,7 +1880,7 @@
 
         // Fetch each ticker independently in parallel — guarantees results for every company
         watchlist.forEach(stock => {
-          fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${stock.ticker}&limit=8&apikey=${API_KEY}`)
+          fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${stock.ticker}&limit=20&apikey=${API_KEY}`)
             .then(r => r.json())
             .then(json => {
               if (json.Note || json.Information) throw new Error(json.Note || json.Information);
@@ -1792,18 +1922,49 @@
       return (
         <div className="space-y-6">
           {watchlist.map(stock => {
-            const d        = newsData[stock.ticker] || { articles: [], loading: true, error: '' };
-            const norm     = t => (t || '').toUpperCase().trim();
-            const articles = d.articles.slice(0, 5);
+            const d    = newsData[stock.ticker] || { articles: [], loading: true, error: '' };
+            const norm = t => (t || '').toUpperCase().trim();
+
+            const getSentiment = a => {
+              const ts = (a.ticker_sentiment || []).find(t => norm(t.ticker) === norm(stock.ticker));
+              return ts ? ts.ticker_sentiment_label : a.overall_sentiment_label;
+            };
+            const bullish = d.articles.filter(a => (getSentiment(a) || '').includes('Bullish')).slice(0, 4);
+            const bearish = d.articles.filter(a => (getSentiment(a) || '').includes('Bearish')).slice(0, 4);
+            const total   = bullish.length + bearish.length;
+
+            const ArticleCard = ({ a, side }) => (
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`block border rounded p-3 transition-colors group ${
+                  side === 'bull'
+                    ? 'border-green-100 hover:bg-green-50 hover:border-green-300'
+                    : 'border-red-100 hover:bg-red-50 hover:border-red-300'
+                }`}
+              >
+                <p className={`text-xs font-medium leading-snug mb-1.5 ${
+                  side === 'bull' ? 'text-gray-800 group-hover:text-green-800' : 'text-gray-800 group-hover:text-red-800'
+                }`}>
+                  {a.title}
+                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-gray-400">{a.source}</span>
+                  <span className="text-gray-300 text-xs">·</span>
+                  <span className="text-xs text-gray-400">{fmtDate(a.time_published)}</span>
+                </div>
+              </a>
+            );
 
             return (
               <div key={stock.ticker} className="bg-white shadow rounded p-5">
                 {/* Section header */}
-                <div className="flex items-center gap-2 mb-4 pb-3 border-b">
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b">
                   <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{stock.ticker}</span>
                   {stock.name && <span className="text-sm font-semibold text-gray-700">{stock.name}</span>}
                   <span className="text-xs text-gray-400 ml-auto">
-                    {d.loading ? 'Loading…' : `${articles.length} article${articles.length !== 1 ? 's' : ''}`}
+                    {d.loading ? 'Loading…' : `${total} article${total !== 1 ? 's' : ''}`}
                   </span>
                 </div>
 
@@ -1821,46 +1982,59 @@
                   <p className="text-sm text-red-400 italic">{d.error}</p>
                 )}
 
-                {!d.loading && !d.error && articles.length === 0 && (
-                  <p className="text-sm text-gray-400 italic">No recent news found for {stock.ticker}.</p>
+                {!d.loading && !d.error && total === 0 && (
+                  <p className="text-sm text-gray-400 italic">No bullish or bearish articles found for {stock.ticker} right now.</p>
                 )}
 
-                {!d.loading && articles.length > 0 && (
-                  <div className="space-y-3">
-                    {articles.map((a, i) => {
-                      const ts        = (a.ticker_sentiment || []).find(t => norm(t.ticker) === norm(stock.ticker));
-                      const sentiment = ts ? ts.ticker_sentiment_label : a.overall_sentiment_label;
-                      return (
-                        <a
-                          key={i}
-                          href={a.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block border rounded p-3 hover:bg-blue-50 hover:border-blue-200 transition-colors group"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 leading-snug mb-1.5 group-hover:text-blue-700">
-                                {a.title}
-                              </p>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-medium text-gray-500">{a.source}</span>
-                                <span className="text-gray-300 text-xs">·</span>
-                                <span className="text-xs text-gray-400">{fmtDate(a.time_published)}</span>
-                              </div>
-                            </div>
-                            {sentiment && (
-                              <Tooltip tip={SENTIMENT_TIPS[sentiment] || 'Market sentiment toward this stock based on recent news analysis.'}>
-                                <span className={`text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${sentimentStyle(sentiment)}`}>
-                                  {sentiment}
-                                </span>
-                              </Tooltip>
-                            )}
+                {!d.loading && total > 0 && (
+                  <>
+                    {/* Bias check banner */}
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 mb-4">
+                      <span className="text-amber-500 text-sm mt-0.5 flex-shrink-0">⚖</span>
+                      <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                        <strong>Confirmation Bias Check</strong> — read both sides before deciding. Strong investors actively seek out the case against their own position.
+                      </p>
+                    </div>
+
+                    {/* Two-column layout */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Bullish column */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <span className="text-green-600 font-bold text-sm">↑</span>
+                          <h4 className="text-sm font-bold text-green-700">Bullish Case</h4>
+                          <span className="text-xs text-green-500 ml-auto">{bullish.length} article{bullish.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {bullish.length > 0 ? (
+                          <div className="space-y-2">
+                            {bullish.map((a, i) => <ArticleCard key={i} a={a} side="bull" />)}
                           </div>
-                        </a>
-                      );
-                    })}
-                  </div>
+                        ) : (
+                          <div className="border border-dashed border-green-200 rounded p-4 text-center">
+                            <p className="text-xs text-gray-400 italic">No bullish articles in this batch.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bearish column */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <span className="text-red-500 font-bold text-sm">↓</span>
+                          <h4 className="text-sm font-bold text-red-600">Bearish Case</h4>
+                          <span className="text-xs text-red-400 ml-auto">{bearish.length} article{bearish.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {bearish.length > 0 ? (
+                          <div className="space-y-2">
+                            {bearish.map((a, i) => <ArticleCard key={i} a={a} side="bear" />)}
+                          </div>
+                        ) : (
+                          <div className="border border-dashed border-red-200 rounded p-4 text-center">
+                            <p className="text-xs text-gray-400 italic">No bearish articles in this batch.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             );
@@ -1887,6 +2061,8 @@
       const [watchlist,       setWatchlist]       = useState(savedList);
       const [stockReasoning,  setStockReasoning]  = useState(() => ls.get('fl_reasoning', ''));
       const [tab,             setTab]             = useState(() => ls.get('fl_tab', 'portfolio'));
+
+      // (timer is stamped by AllocationSection when the user locks their $1k allocation)
 
       // Sync every piece of state to localStorage whenever it changes
       useEffect(() => { ls.set('fl_fses',      baselineFSES);    }, [baselineFSES]);
@@ -2002,7 +2178,7 @@
               </div>
             )}
 
-            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} />}
+            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} onGoToLearningPath={() => setTab('learn')} />}
 
             {tab === 'learn' && (
               baselineFSES === null ? (
