@@ -1,5 +1,2 @@
-# API keys — never commit the real config
-env/config.js
-
 # macOS
 .DS_Store
