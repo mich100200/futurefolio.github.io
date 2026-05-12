@@ -13,6 +13,7 @@
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="env/config.js"></script>
 </head>
 <body class="bg-gray-100 p-6 font-sans">
   <div id="root"></div>
@@ -20,113 +21,2092 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const API_KEY = 'T4QNXPY9XE3NOAI3';
-    const symbols = ['AAPL', 'TSLA', 'AMZN', 'GOOG'];
+    const API_KEY = (typeof ENV !== 'undefined' && ENV.ALPHA_VANTAGE_KEY) || '';
+
+    const FSES_QUESTIONS = [
+      "I feel confident in my ability to manage market risk.",
+      "I understand how different asset classes perform during economic downturns.",
+      "I can make investment decisions without relying entirely on professional advice."
+    ];
+
+    // Fetch last ~10 trading days for a ticker, return structured week data
+    async function fetchWeeklyData(ticker) {
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=compact&apikey=${API_KEY}`;
+      const res  = await fetch(url);
+      const json = await res.json();
+      if (json.Note || json.Information) throw new Error('API rate limit reached (25 req/day). Try again later.');
+      const series = json['Time Series (Daily)'];
+      if (!series) throw new Error(`No data found for "${ticker}" — check the ticker and try again.`);
+
+      // Dates sorted newest → oldest
+      const dates = Object.keys(series).sort((a, b) => b.localeCompare(a));
+      if (dates.length < 2) throw new Error(`Insufficient data for "${ticker}"`);
+
+      // Use up to last 7 trading days
+      const window   = dates.slice(0, 7).reverse(); // oldest → newest for chart
+      const prices   = window.map(d => parseFloat(series[d]['4. close']));
+      const current  = prices[prices.length - 1];
+      const weekAgo  = prices[0];
+      const changePct = ((current - weekAgo) / weekAgo) * 100;
+
+      return {
+        ticker:      ticker.toUpperCase(),
+        current,
+        weekAgo,
+        changePct,
+        prices,
+        dates:       window,
+        currentDate: dates[0],
+        weekAgoDate: window[0],
+      };
+    }
+
+    // ── Contextual Tooltip ────────────────────────────────────────────────────
+    function Tooltip({ tip, children }) {
+      const [show, setShow] = useState(false);
+      return (
+        <span className="relative inline-block cursor-help"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          {children}
+          {show && (
+            <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none whitespace-normal" style={{minWidth:'180px'}}>
+              {tip}
+              <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" style={{width:0,height:0}} />
+            </span>
+          )}
+        </span>
+      );
+    }
+
+    const SENTIMENT_TIPS = {
+      'Bullish':          'Analysts and news sources have a positive outlook on this stock — they expect the price to rise.',
+      'Somewhat-Bullish': 'Mild positive sentiment — more good news than bad, but not strongly so.',
+      'Somewhat_Bullish': 'Mild positive sentiment — more good news than bad, but not strongly so.',
+      'Neutral':          'No strong directional sentiment — news and analyst views are evenly balanced.',
+      'Somewhat-Bearish': 'Mild negative sentiment — more concern than confidence in this stock\'s near-term performance.',
+      'Somewhat_Bearish': 'Mild negative sentiment — more concern than confidence in this stock\'s near-term performance.',
+      'Bearish':          'Analysts and news sources have a negative outlook on this stock — they expect the price to fall.',
+    };
+
+    // ── Mini Sparkline Chart ───────────────────────────────────────────────────
+    function Sparkline({ prices, positive }) {
+      const canvasRef = useRef(null);
+      const chartRef  = useRef(null);
+
+      useEffect(() => {
+        if (!canvasRef.current || !prices.length) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const color = positive ? 'rgba(34,197,94,1)' : 'rgba(239,68,68,1)';
+        const fill  = positive ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)';
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'line',
+          data: {
+            labels: prices.map((_, i) => i),
+            datasets: [{ data: prices, borderColor: color, backgroundColor: fill,
+              borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0 }],
+          },
+          options: {
+            responsive: false,
+            animation: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales:  { x: { display: false }, y: { display: false } },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [prices.join(',')]);
+
+      return <canvas ref={canvasRef} width="140" height="56" />;
+    }
+
+    // ── FSES Assessment Modal ──────────────────────────────────────────────────
+    function AssessmentModal({ onClose }) {
+      const [step,           setStep]           = useState(0); // 0=screener, 1-3=questions
+      const [isFinanceMajor, setIsFinanceMajor] = useState(false);
+      const [hasBrokerage,   setHasBrokerage]   = useState(false);
+      const [answers,        setAnswers]         = useState({ q1: 0, q2: 0, q3: 0 });
+
+      const keys          = ['q1', 'q2', 'q3'];
+      const currentKey    = step > 0 ? keys[step - 1] : null;
+      const currentAnswer = currentKey ? answers[currentKey] : 0;
+      const canAdvance    = step === 0 || currentAnswer > 0;
+
+      const handleNext = () => {
+        if (step < 3) {
+          setStep(step + 1);
+        } else {
+          const avg = (answers.q1 + answers.q2 + answers.q3) / 3;
+          onClose(avg, { isFinanceMajor, hasBrokerage });
+        }
+      };
 
     function SplashModal({ onClose }) {
       return (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-lg text-center">
-            <h2 className="text-2xl font-bold mb-2 text-blue-600">Welcome to Financial Litmus!</h2>
-            <p className="mb-4 text-gray-700">
-              Financial Litmus helps learners explore real-world investing in a safe, educational environment. The data pulls from real market information using the prior week's data to curate a realistic perspective.
-              You’ll see portfolio tools, financial goals, and live stock data in one place!
-            </p>
-            <button onClick={onClose} className="bg-blue-500 text-white px-4 py-2 rounded">Let’s Go!</button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-1 text-blue-600">Welcome to Financial Litmus</h2>
+
+            {/* ── Step 0: Screener ── */}
+            {step === 0 && (
+              <>
+                <p className="text-gray-500 text-sm mb-6">
+                  Before we begin, answer two quick background questions. Your responses
+                  help contextualize your results — there are no right or wrong answers.
+                </p>
+                <div className="space-y-4 mb-8">
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={isFinanceMajor}
+                      onChange={e => setIsFinanceMajor(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-500 flex-shrink-0"
+                    />
+                    <span className="text-sm text-gray-700 group-hover:text-gray-900 leading-snug">
+                      I am currently studying or hold a degree in <strong>finance, accounting, or economics</strong>.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={hasBrokerage}
+                      onChange={e => setHasBrokerage(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-500 flex-shrink-0"
+                    />
+                    <span className="text-sm text-gray-700 group-hover:text-gray-900 leading-snug">
+                      I currently have an <strong>active brokerage account</strong> (e.g., Robinhood, Fidelity, Schwab, TD Ameritrade).
+                    </span>
+                  </label>
+                </div>
+                <button
+                  onClick={handleNext}
+                  className="w-full py-2 rounded font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-all"
+                >
+                  Continue →
+                </button>
+              </>
+            )}
+
+            {/* ── Steps 1–3: FSES Questions ── */}
+            {step > 0 && (
+              <>
+                {/* Progress bar */}
+                <div className="mb-6 mt-2">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                    <span className="font-medium">Question {step} of {FSES_QUESTIONS.length}</span>
+                    <span>{Math.round((step / FSES_QUESTIONS.length) * 100)}% complete</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${(step / FSES_QUESTIONS.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-500 mb-1 italic">
+                  Rate your agreement with the following statement:
+                </p>
+                <p className="text-base font-semibold text-gray-800 mb-5 leading-snug">
+                  "{FSES_QUESTIONS[step - 1]}"
+                </p>
+
+                <div className="flex gap-2 justify-between mb-2">
+                  {[1, 2, 3, 4, 5].map(v => (
+                    <button key={v}
+                      onClick={() => setAnswers(prev => ({ ...prev, [currentKey]: v }))}
+                      className={`flex-1 h-11 rounded-full text-sm font-semibold border-2 transition-all ${
+                        currentAnswer === v
+                          ? 'bg-blue-500 text-white border-blue-500 scale-105'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                      }`}
+                    >{v}</button>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mb-8">
+                  <span>Strongly Disagree</span><span>Strongly Agree</span>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setStep(step - 1)}
+                    className="px-4 py-2 rounded border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition-all"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    disabled={!canAdvance}
+                    className={`flex-1 py-2 rounded font-semibold transition-all ${
+                      canAdvance
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {step === FSES_QUESTIONS.length ? 'Continue →' : 'Next →'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       );
     }
 
-    function App() {
-      const [showSplash, setShowSplash] = useState(true);
-      const [tab, setTab] = useState("portfolio");
-      const [expandedStock, setExpandedStock] = useState(null);
-      const [goalProgress, setGoalProgress] = useState(65);
-      const goalTotal = 200;
-      const chartRef = useRef(null);
-      const chartInstanceRef = useRef(null);
-      const [stockData, setStockData] = useState([]);
+    const SUGGESTED_STOCKS = [
+      { ticker: 'AAPL',  name: 'Apple'       },
+      { ticker: 'TSLA',  name: 'Tesla'       },
+      { ticker: 'KO',    name: 'Coca-Cola'   },
+      { ticker: 'MCD',   name: "McDonald's"  },
+      { ticker: 'AMZN',  name: 'Amazon'      },
+      { ticker: 'MSFT',  name: 'Microsoft'   },
+      { ticker: 'GOOGL', name: 'Alphabet'    },
+      { ticker: 'META',  name: 'Meta'        },
+      { ticker: 'NVDA',  name: 'NVIDIA'      },
+      { ticker: 'JPM',   name: 'JPMorgan'    },
+      { ticker: 'DIS',   name: 'Disney'      },
+      { ticker: 'NKE',   name: 'Nike'        },
+      { ticker: 'WMT',   name: 'Walmart'     },
+      { ticker: 'NFLX',  name: 'Netflix'     },
+      { ticker: 'SBUX',  name: 'Starbucks'   },
+      { ticker: 'PFE',   name: 'Pfizer'      },
+      { ticker: 'V',     name: 'Visa'        },
+      { ticker: 'BA',    name: 'Boeing'      },
+    ];
 
-      const fetchStocks = () => {
-        Promise.all(symbols.map(async (sym) => {
-          try {
-            const res = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${sym}&apikey=${API_KEY}`);
-            const json = await res.json();
-            const quote = json["Global Quote"];
+    // ── Sector Data ────────────────────────────────────────────────────────────
+    const SECTOR_MAP = {
+      AAPL: 'Technology',  MSFT: 'Technology',  GOOGL: 'Technology',
+      AMZN: 'Consumer Discretionary',  NKE: 'Consumer Discretionary',
+      META: 'Media & Entertainment',  NFLX: 'Media & Entertainment',  DIS: 'Media & Entertainment',
+      NVDA: 'Semiconductors',
+      TSLA: 'Electric Vehicles',
+      JPM:  'Financial Services',  V: 'Financial Services',
+      KO:   'Consumer Staples',  MCD: 'Consumer Staples',  WMT: 'Consumer Staples',  SBUX: 'Consumer Staples',
+      PFE:  'Healthcare/Pharma',
+      BA:   'Aerospace & Defense',
+    };
+    function getSector(ticker) {
+      return SECTOR_MAP[ticker.toUpperCase()] || 'General Equity';
+    }
 
-            if (!quote || !quote["05. price"]) {
-              throw new Error(`Missing data for ${sym}`);
-            }
+    const SECTOR_CONTENT = {
+      'Technology': {
+        keyMetric:  'Price-to-Earnings (P/E) ratio — tech companies often trade at high multiples, meaning you are paying a premium for expected future growth, not current profits.',
+        keyRisk:    'Interest rate sensitivity. When rates rise, future profits are worth less today, which hits high-growth tech stocks harder than most other sectors.',
+        watchFor:   'Federal Reserve interest rate decisions, quarterly earnings reports (especially revenue growth guidance), and any antitrust or regulatory news from the DOJ or EU.',
+        reflection: 'If this company stopped growing tomorrow and simply held its current revenue flat, would its stock price still make sense? What does your answer reveal about how much of the price is based on proven reality versus investor expectations?',
+      },
+      'Consumer Staples': {
+        keyMetric:  'Dividend yield — staples companies are known for reliable, growing dividends. A falling yield (as the price rises) can signal the stock is becoming expensive relative to its income.',
+        keyRisk:    'Margin compression from inflation. When input costs like ingredients, packaging, and logistics rise faster than companies can raise prices, profits shrink even when sales look stable.',
+        watchFor:   'CPI (Consumer Price Index) data releases, quarterly gross margin commentary on earnings calls, and commodity price trends for key inputs like corn, sugar, coffee, or wheat.',
+        reflection: 'People buy Coca-Cola and McDonald\'s even in recessions. Does that stability make you feel safer holding this stock — or does it make you wonder why the upside is more limited than faster-growing sectors?',
+      },
+      'Consumer Discretionary': {
+        keyMetric:  'Same-store sales growth or revenue growth rate — this tells you whether the core business is genuinely expanding or whether growth is just coming from new store openings.',
+        keyRisk:    'Consumer spending cycles. When unemployment rises or confidence falls, people cut discretionary purchases first. These stocks often fall faster than the broader market in downturns.',
+        watchFor:   'Consumer Confidence Index (CCI) releases, monthly retail sales reports, unemployment claims, and company-specific data on inventory levels and foot traffic.',
+        reflection: 'Would you personally buy more of this company\'s products if your income dropped 20%? If the honest answer is no, what does that tell you about the risk of holding this stock through an economic slowdown?',
+      },
+      'Financial Services': {
+        keyMetric:  'Net Interest Margin (NIM) — the spread between what a bank earns on loans and what it pays on deposits. It is the core engine of banking profitability.',
+        keyRisk:    'Credit cycle risk. When the economy weakens, loan defaults rise rapidly, eroding bank profits. Regulatory changes — capital requirements, stress tests — can also affect returns unexpectedly.',
+        watchFor:   'Federal Reserve interest rate decisions (directly affects NIM), quarterly loan loss provisions on earnings calls, and any Federal Reserve stress test results.',
+        reflection: 'Banks profit when people and businesses borrow confidently and repay reliably. If you believed a recession was 12 months away, how would that change how much you wanted to own in this sector?',
+      },
+      'Healthcare/Pharma': {
+        keyMetric:  'Pipeline depth — the number of drug candidates in Phase 2 and Phase 3 clinical trials. A thin pipeline means heavy dependence on existing approved drugs.',
+        keyRisk:    'Binary event risk. A single FDA rejection can drop a pharma stock 20–40% in a day. A major drug losing patent protection can eliminate billions in revenue overnight.',
+        watchFor:   'FDA advisory committee meetings and approval decisions, patent expiration calendars for key drugs, and Medicare drug price negotiation announcements.',
+        reflection: 'Pharmaceutical companies can save lives and generate enormous profits — or lose both in a single clinical trial failure. Does that binary risk profile match how you normally make decisions when the outcome is uncertain?',
+      },
+      'Media & Entertainment': {
+        keyMetric:  'Subscriber count or Monthly Active Users (MAU) — for streaming and social media companies, audience size drives both ad revenue and subscription income.',
+        keyRisk:    'Attention risk. Revenue is directly tied to how many people use the platform and how often. Competition for time is intense, and user behavior can shift faster than a company can adapt.',
+        watchFor:   'Quarterly subscriber or user growth numbers, advertiser spending trends, and regulatory news around content moderation, data privacy (especially EU rules), or antitrust.',
+        reflection: 'How many hours per week do you personally spend on this company\'s platform or content? Does knowing your own usage pattern change how you think about whether this business can keep growing?',
+      },
+      'Semiconductors': {
+        keyMetric:  'Data center revenue growth and order backlog — for AI-era chip companies, these signal whether enterprise demand is structural or a short-term wave that could reverse.',
+        keyRisk:    'Supply chain concentration and geopolitical risk. The most advanced chips are manufactured in Taiwan. Any disruption to that supply chain — political, natural, or military — would have immediate global impact.',
+        watchFor:   'TSMC earnings and capacity announcements, U.S.–China trade policy (especially export controls on advanced chips), and major hyperscaler capital spending plans from Microsoft, Google, Amazon, and Meta.',
+        reflection: 'Chip companies\' market caps have grown faster than almost any other sector during the AI wave — driven largely by enthusiasm about what AI will become. How much of the current stock price do you believe reflects what AI will definitely deliver, versus what investors hope it will?',
+      },
+      'Electric Vehicles': {
+        keyMetric:  'Vehicle delivery numbers and production capacity utilization — these reveal whether the company is actually scaling or merely promising to scale.',
+        keyRisk:    'Regulatory and policy risk. EV economics are deeply tied to federal tax credits, emissions regulations, and infrastructure spending. A change in administration can materially shift the business.',
+        watchFor:   'Quarterly delivery reports, federal EV tax credit policy changes, energy credit revenue announcements (a significant but volatile income stream), and competition from legacy automakers entering EV.',
+        reflection: 'EV adoption depends simultaneously on charging infrastructure, battery costs, consumer preferences, and government policy. If one of those four factors reversed course, how confident are you that the others would compensate?',
+      },
+      'Aerospace & Defense': {
+        keyMetric:  'Backlog-to-revenue ratio — defense contracts are often multi-year. A large backlog provides revenue visibility, but technical delays can persist for years even after a contract is won.',
+        keyRisk:    'Program execution risk. Cost overruns on fixed-price government contracts have historically been a major source of losses. Safety incidents can ground entire product lines indefinitely.',
+        watchFor:   'U.S. defense budget appropriations, FAA or NTSB safety investigations, major contract awards or cancellations from the Department of Defense, and any cost-to-complete estimate changes on fixed-price programs.',
+        reflection: 'Defense companies tend to benefit from geopolitical instability — more conflict generally means more government spending on their products. Does owning a stake in that dynamic feel straightforward to you, or does it raise questions you want to think through?',
+      },
+      'General Equity': {
+        keyMetric:  'Revenue growth rate and profit margin trend — for any company, these two numbers together tell you whether the business is genuinely expanding or just cutting costs to show profits.',
+        keyRisk:    'Familiarity bias. Investors often overweight companies they have heard of, even when they do not understand the business model. Recognizing a brand name is not the same as understanding an investment.',
+        watchFor:   'Quarterly earnings reports (especially revenue guidance for the next quarter), any significant management changes, and broader market sentiment indicators like the VIX volatility index.',
+        reflection: 'Can you explain in three sentences how this company makes money and why it should be worth more in five years than it is today? If that is difficult, what specific information would you need to answer it with confidence?',
+      },
+    };
 
-            const price = quote["05. price"];
-            const changeStr = quote["10. change percent"] || "0.00%";
-            const change = parseFloat(changeStr.replace('%', ''));
-            const marketClosed = change === 0;
+    // ── Plan personalization helpers ────────────────────────────────────────────
+    function fmtChange(pct) {
+      if (Math.abs(pct) < 0.005) return 'flat';
+      return (pct >= 0 ? 'up ' : 'down ') + Math.abs(pct).toFixed(2) + '%';
+    }
+    function gainedOrLost(pct) { return pct >= 0 ? 'gained' : 'lost'; }
+    function stockListPhrase(wl) {
+      const items = wl.map(s => `${s.name || s.ticker} (${s.ticker})`);
+      if (items.length === 1) return items[0];
+      if (items.length === 2) return items[0] + ' and ' + items[1];
+      return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+    }
+    function getDiversificationProfile(sectors) {
+      const u = [...new Set(sectors)];
+      if (u.length === 1) return 'concentrated';
+      if (u.length === sectors.length) return 'fully diversified';
+      return 'partially diversified';
+    }
 
-            return {
-              ticker: sym,
-              price,
-              change,
-              marketClosed
-            };
-          } catch (err) {
-            console.warn("Stock data error:", sym, err);
-            return {
-              ticker: sym,
-              price: "N/A",
-              change: 0,
-              marketClosed: true
-            };
-          }
-        }))
-        .then(data => setStockData(data))
-        .catch((err) => console.error("Overall stock fetch failed", err));
+    // ── Personalized step generator ─────────────────────────────────────────────
+    function generatePersonalizedSteps(watchlist, tier) {
+      const enriched = watchlist.map(s => ({
+        ...s,
+        sector:  getSector(s.ticker),
+        content: SECTOR_CONTENT[getSector(s.ticker)],
+      }));
+      const sectors       = enriched.map(e => e.sector);
+      const uniqueSectors = [...new Set(sectors)];
+      const divProfile    = getDiversificationProfile(sectors);
+      const sorted        = [...enriched].sort((a, b) => b.changePct - a.changePct);
+      const best          = sorted[0];
+      const worst         = sorted[sorted.length - 1];
+      const listPhrase    = stockListPhrase(watchlist);
+      const isLow = tier === 'low', isHigh = tier === 'high';
+
+      // ── Step 1: Why These Stocks ──────────────────────────────────────────────
+      const step1 = {
+        icon: '🪞', tag: 'Self-Awareness',
+        title: 'Step 1 — Why Did You Pick These Stocks? (Week 1)',
+        objective: `Examine the reasoning behind your choice of ${listPhrase} — and separate genuine knowledge from familiarity.`,
+        actions: isLow ? [
+          `Write one sentence for each stock explaining exactly why you picked it. "I've heard of it" is a valid starting answer — honesty here is the point.`,
+          `For each stock, describe in plain language what the company actually does and how it makes money. If you're unsure about one, that's the signal.`,
+          `Rate your actual confidence in each stock on a scale of 1–5. The gaps between your ratings matter more than the ratings themselves.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} is in the ${e.sector} sector`).join(', ')}.`,
+        ] : isHigh ? [
+          `Write a complete bull and bear case for each of ${listPhrase}. Both cases must be grounded in data, not sentiment.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Was that a deliberate risk decision?`,
+          `Identify the single assumption that underlies all three positions simultaneously. If that assumption breaks, what happens to the entire portfolio?`,
+        ] : [
+          `Write a 2–3 sentence investment thesis for each stock — why you believe it is worth owning right now, not just why you've heard of it.`,
+          `Your portfolio is ${divProfile}: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Was that intentional?`,
+          `For your strongest conviction pick, state what would have to be true about the world in 12 months for your thesis to be wrong.`,
+        ],
+        reflection: isLow
+          ? `Which of your three stocks would be hardest to explain to a friend — and which feels easiest? That gap is exactly where this learning path begins.`
+          : isHigh
+          ? `What would a sophisticated short-seller say about your portfolio as a whole — not individual stocks, but the macro thesis that must hold for all three to outperform?`
+          : `If you had to drop one stock right now, which would it be and why? The ease or difficulty of that decision reveals how strong your actual conviction is.`,
+        why: isLow
+          ? `Metacognition — knowing what you know versus what you think you know — is the prerequisite for learning. Bandura's self-efficacy research shows that people who can accurately assess their own competence improve faster than those who over- or underestimate it.`
+          : `Investment thesis documentation is used by professional fund managers because it creates an auditable record that separates process from outcome — the foundation of calibrated confidence rather than overconfidence.`,
       };
 
-      useEffect(() => {
-        fetchStocks();
-        const interval = setInterval(fetchStocks, 10000);
-        return () => clearInterval(interval);
-      }, []);
+      // ── Step 2: Diversification / Risk Profile ────────────────────────────────
+      const divActions = (() => {
+        if (divProfile === 'concentrated') {
+          const sector = uniqueSectors[0];
+          return isLow ? [
+            `All three of your stocks — ${listPhrase} — are in the ${sector} sector. Look up what "concentration risk" means.`,
+            `Research what typically happens to ${sector} stocks during the specific risk event for that sector: ${enriched[0].content.keyRisk}`,
+            `Identify one stock from a completely different sector that you could theoretically swap in. What would change about your portfolio's risk?`,
+            `Write down: what is the single event that would cause all three of your stocks to fall at the same time?`,
+          ] : [
+            `Your entire portfolio (${listPhrase}) sits in ${sector}. Quantify the correlation — look up each stock's beta relative to the ${sector} sector index.`,
+            `Sector risk: ${enriched[0].content.keyRisk} Estimate how a severe version of this risk would affect each of your three holdings differently.`,
+            `Argue why high-conviction sector concentration can be a valid strategy. Then argue why it is dangerous for a new investor. Which argument is stronger for your situation?`,
+          ];
+        } else if (divProfile === 'fully diversified') {
+          return isLow ? [
+            `Your three stocks span distinct sectors: ${enriched.map(e => `${e.name} is ${e.sector}`).join(', ')}. This is called sector diversification.`,
+            `Look up what diversification is designed to protect against. Write one sentence in your own words.`,
+            `This past week, which direction did each of your stocks move? If they all moved the same way, research what "market correlation" means — sectors can still move together in a broad selloff.`,
+            `Research what an index fund is and how it achieves diversification automatically. How does your three-stock portfolio compare?`,
+          ] : [
+            `Your portfolio spans ${uniqueSectors.join(', ')} — this is sector-diversified. But evaluate whether these sectors are actually uncorrelated in practice.`,
+            `Research each sector's performance during the 2022 rate-hike cycle. Did sector diversity protect investors, or did all three sectors fall together regardless?`,
+            `True diversification is about correlation, not just sector labels. Look up the correlation between your sectors over the last 3 years. Does the data support your diversification thesis?`,
+          ];
+        } else {
+          return isLow ? [
+            `Your portfolio covers ${uniqueSectors.length} sectors: ${enriched.map(e => `${e.ticker} (${e.sector})`).join(', ')}.`,
+            `Research: what does it mean when two assets are "correlated"? Write a plain-English definition — no jargon.`,
+            `Which two of your stocks do you think would react most similarly if the U.S. economy slowed sharply? What makes you think so?`,
+            `If you had to add a fourth stock from a sector not yet in your portfolio, what sector would you choose and why?`,
+          ] : [
+            `You have ${uniqueSectors.length} sectors: ${enriched.map(e => `${e.ticker} → ${e.sector}`).join(', ')}. Evaluate whether your mix is genuinely uncorrelated or just superficially different.`,
+            `Look up historical correlation between your represented sectors. Are any more correlated than you assumed?`,
+            `Design the single addition that would most improve your portfolio's risk-adjusted profile — and explain why using data, not intuition.`,
+          ];
+        }
+      })();
 
-      const pieData = {
-        labels: ["Tech", "Healthcare", "Retail", "Energy", "Misc"],
-        datasets: [
+      const step2 = {
+        icon: '⚖️', tag: 'Portfolio Analysis',
+        title: `Step 2 — Understand Your Portfolio's Risk Profile (Week 1)`,
+        objective: `Understand what ${divProfile === 'concentrated' ? 'concentration' : 'diversification'} actually means for your specific holdings — not as an abstract concept, but as a property of ${listPhrase}.`,
+        actions: divActions,
+        reflection: divProfile === 'concentrated'
+          ? `If the single biggest risk to the ${uniqueSectors[0]} sector materialized tomorrow, what would happen to your virtual portfolio — and how would that feel emotionally? What does that reaction tell you about your actual risk tolerance?`
+          : `Your stocks span multiple sectors. Does that mean you're protected from a major market downturn? Think carefully: what single scenario would cause all three to fall simultaneously — and how likely is that scenario?`,
+        why: `Modern Portfolio Theory (Markowitz, 1952) established that risk-adjusted returns improve when portfolio components have low correlation — meaning they respond differently to the same market events. Understanding this at the level of your own holdings is more durable than understanding it abstractly.`,
+      };
+
+      // ── Steps 3–5: Per-stock analysis ─────────────────────────────────────────
+      const perStockSteps = enriched.map((stock, idx) => {
+        const { name, ticker, changePct, sector, content } = stock;
+        const direction = fmtChange(changePct);
+        const gl        = gainedOrLost(changePct);
+        const stepNum   = idx + 3;
+        const icons     = ['🔎', '📊', '🧪'];
+
+        const actions = isLow ? [
+          `${name} (${ticker}) ${gl} ${Math.abs(changePct).toFixed(2)}% over the past week. Before looking for explanations, note whether that surprises you — and why.`,
+          `Research what ${name} actually does. Write a single sentence describing its core business in your own words.`,
+          `The key metric for ${sector} companies is: ${content.keyMetric}`,
+          `The main risk for ${sector} companies is: ${content.keyRisk}`,
+          `Read one news article about ${name} from this week. Does anything connect to the ${direction} price movement?`,
+        ] : isHigh ? [
+          `${name} (${ticker}) moved ${direction} this week. Reconstruct the narrative: which specific news events or macro factors best explain this move? Are there any that seem to contradict it?`,
+          `Key metric for ${sector}: ${content.keyMetric} Evaluate where ${ticker} currently stands on this metric and whether its valuation is justified given that reading.`,
+          `Main risk: ${content.keyRisk} Model the downside: if this risk fully materialized, what is the fair value of ${ticker} — and how far is that from today's price?`,
+          `What to monitor: ${content.watchFor} Which of these catalysts is most likely within the next 90 days, and what is your thesis if it occurs?`,
+        ] : [
+          `${name} (${ticker}) moved ${direction} this week. Before checking headlines, write your hypothesis: what do you think caused this movement?`,
+          `Key metric for ${sector}: ${content.keyMetric} Look up ${ticker}'s current figure on Yahoo Finance or Google Finance.`,
+          `Main risk: ${content.keyRisk} Rate how much you believe this risk is currently priced into ${ticker}'s stock price (1 = not at all, 5 = fully priced in). Justify your rating.`,
+          `What to watch: ${content.watchFor} Name one specific event you'll track over the next 30 days.`,
+        ];
+
+        return {
+          icon: icons[idx] || '📌', tag: sector,
+          title: `Step ${stepNum} — Analyze ${name} (${ticker}) — ${sector} (Week ${idx + 2})`,
+          objective: isLow
+            ? `Build genuine understanding of ${name} as a business — not just as a ticker symbol that moved ${direction} this week.`
+            : `Develop a calibrated, evidence-based view of ${name} that accounts for both the ${sector} sector's dynamics and the specific 1-week price move.`,
+          actions,
+          reflection: content.reflection,
+          why: isLow
+            ? `Deep understanding of one investment builds confidence that holds during price drops — because you understand the business, not just the chart. Broad but shallow familiarity with many stocks rarely produces the same outcome.`
+            : `Sector-level analysis reveals structural forces acting on a company that are invisible in the price chart. Understanding the ${sector} sector's specific risk drivers transforms ${ticker} from a number on a screen into a business with predictable sensitivities to real-world events.`,
+        };
+      });
+
+      // ── Final step: Synthesis ─────────────────────────────────────────────────
+      const finalStepNum = enriched.length + 3;
+      const finalStep = {
+        icon: '🎯', tag: 'Goal Setting',
+        title: `Step ${finalStepNum} — Synthesize and Set Your Next Goal (Week 4)`,
+        objective: isLow
+          ? `Consolidate what you've learned about ${listPhrase} into a concrete, forward-looking plan — not a vague intention.`
+          : isHigh
+          ? `Challenge your conclusions: what does the evidence from this pathway confirm about your original thesis — and what does it contradict?`
+          : `Use the performance data and analysis to refine your investment thesis and set a measurable next goal.`,
+        actions: isLow ? [
+          `Your best performer this week was ${best.name} (${best.ticker}) at ${fmtChange(best.changePct)}. Your weakest was ${worst.name} (${worst.ticker}) at ${fmtChange(worst.changePct)}. Write down whether this was predictable or a surprise — and why.`,
+          `Go to the My Scores tab and review your FSES baseline. Do you feel more confident now than when you started?`,
+          `Write one financial concept you now understand clearly that you didn't when you started this pathway.`,
+          `Set one specific, measurable daily habit for the next 30 days — for example: "I will check ${enriched[0].ticker}'s price and read one article in the Daily News tab every morning."`,
+        ] : isHigh ? [
+          `Review all three 1-week returns: ${enriched.map(e => `${e.ticker} ${fmtChange(e.changePct)}`).join(', ')}. Where was your analysis predictive? Where did it fail, and why?`,
+          `Retake the FSES assessment via the My Scores tab. High-efficacy users who completed counter-narrative work sometimes see a slight score decrease — that is calibration, not regression. It means your confidence is becoming more accurate.`,
+          `Identify one cognitive bias that appeared in your analysis of this portfolio. Describe specifically where it showed up and what more rigorous thinking would have looked like.`,
+          `Write a one-paragraph post-mortem: if you were constructing or analyzing this portfolio from scratch, what would you do differently?`,
+        ] : [
+          `Compare 1-week performance across your portfolio: ${enriched.map(e => `${e.ticker} ${fmtChange(e.changePct)}`).join(', ')}. Does this confirm or challenge your original thesis for each stock?`,
+          `Retake the FSES assessment in the My Scores tab. Your target is High (≥ 4.0). If unchanged, revisit the per-stock analysis steps — depth of analysis there is the most powerful efficacy-builder.`,
+          `Set one measurable, sector-specific goal for the next 30 days: something you will actively monitor about the industries you now hold.`,
+        ],
+        reflection: isLow
+          ? `Where did you feel most confident over this pathway — and where did you still feel most out of your depth? Those two answers are your exact roadmap for what comes next.`
+          : isHigh
+          ? `If a professional fund manager reviewed your analysis of ${listPhrase} and the decisions you made, what would they praise — and what would they push back on hardest?`
+          : `Your portfolio's performance this week was shaped partly by your decisions and partly by forces outside your control. Can you clearly separate which parts of the outcome belong to which category?`,
+        why: isLow
+          ? `Goal-setting research (Locke & Latham, 2002) shows that specific, written goals outperform vague intentions by a significant margin. The act of committing a goal to writing is itself a behavioral signal of growing self-belief.`
+          : `Systematic post-analysis — reviewing decisions against outcomes with explicit attention to process rather than result — is how professionals convert experience into expertise. Without it, experience simply reinforces existing biases rather than correcting them.`,
+      };
+
+      return [step1, step2, ...perStockSteps, finalStep];
+    }
+
+    // ── Stock Picker Modal ─────────────────────────────────────────────────────
+    function StockPickerModal({ onClose }) {
+      const [query,         setQuery]         = useState('');
+      const [searchResults, setSearchResults] = useState([]);
+      const [searching,     setSearching]     = useState(false);
+      const [preview,       setPreview]       = useState(null);
+      const [picks,         setPicks]         = useState([]);
+      const [loading,       setLoading]       = useState(false);
+      const [error,         setError]         = useState('');
+      const [showDropdown,  setShowDropdown]  = useState(false);
+      const searchTimerRef     = useRef(null);
+      const skipNextSearchRef  = useRef(false);
+      const [showReflection,   setShowReflection] = useState(false);
+      const [reasoning,        setReasoning]       = useState('');
+
+      const MAX = 3;
+      const canAdd = preview && picks.length < MAX && !picks.find(p => p.ticker === preview.ticker);
+
+      // Debounced symbol search — fires 400ms after user stops typing
+      useEffect(() => {
+        setPreview(null); setError(''); setShowDropdown(false);
+        if (query.trim().length < 2) { setSearchResults([]); return; }
+
+        if (skipNextSearchRef.current) {
+          skipNextSearchRef.current = false;
+          return;
+        }
+
+        searchTimerRef.current = setTimeout(async () => {
+          setSearching(true);
+          try {
+            const res  = await fetch(`https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(query)}&apikey=${API_KEY}`);
+            const json = await res.json();
+            if (json.Note || json.Information) {
+              setError('API rate limit reached (25 req/day). You can still type a ticker directly and press Enter.');
+              setSearchResults([]);
+              setSearching(false);
+              return;
+            }
+            const matches = (json.bestMatches || [])
+              .filter(m => ['Equity', 'ETF'].includes(m['3. type']) && m['4. region'] === 'United States')
+              .slice(0, 6);
+            setSearchResults(matches);
+            setShowDropdown(matches.length > 0);
+            if (matches.length === 0) setError('No results found. Try a different name or type the ticker and press Enter.');
+          } catch {
+            setSearchResults([]);
+            setError('Search failed. Check your connection or type the ticker directly and press Enter.');
+          } finally {
+            setSearching(false);
+          }
+        }, 400);
+
+        return () => clearTimeout(searchTimerRef.current);
+      }, [query]);
+
+      const handleDirectLookup = async () => {
+        const ticker = query.trim().toUpperCase();
+        if (!ticker) return;
+        clearTimeout(searchTimerRef.current);
+        setSearching(false);
+        setShowDropdown(false);
+        setSearchResults([]);
+        setLoading(true); setError('');
+        try {
+          const data = await fetchWeeklyData(ticker);
+          setPreview({ ...data, name: '' });
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleSelectResult = async (match) => {
+        const ticker = match['1. symbol'];
+        const name   = match['2. name'];
+        setQuery(name);
+        setShowDropdown(false);
+        setSearchResults([]);
+        setLoading(true); setError('');
+        try {
+          const data = await fetchWeeklyData(ticker);
+          setPreview({ ...data, name });
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleSelectSuggestion = async (suggestion) => {
+        clearTimeout(searchTimerRef.current);
+        skipNextSearchRef.current = true;
+        setSearching(false);
+        setShowDropdown(false);
+        setSearchResults([]);
+        setQuery(suggestion.name);
+        setPreview(null); setError('');
+        setLoading(true);
+        try {
+          const data = await fetchWeeklyData(suggestion.ticker);
+          setPreview({ ...data, name: suggestion.name });
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleAdd = () => {
+        if (!canAdd) return;
+        setPicks(prev => [...prev, preview]);
+        setPreview(null);
+        setQuery('');
+      };
+
+      const handleRemove = (ticker) => setPicks(prev => prev.filter(p => p.ticker !== ticker));
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full relative overflow-hidden">
+            <h2 className="text-2xl font-bold mb-1 text-blue-600">Build Your Watchlist</h2>
+            <p className="text-gray-500 text-sm mb-4">
+              Pick from popular stocks below, or search by company name / ticker.
+              Add exactly 3 to get started.
+            </p>
+
+            {/* Popular stock suggestions */}
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Popular Stocks</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SUGGESTED_STOCKS.map(s => {
+                  const alreadyPicked = picks.some(p => p.ticker === s.ticker);
+                  const isPreviewing  = preview && preview.ticker === s.ticker;
+                  return (
+                    <button
+                      key={s.ticker}
+                      onClick={() => !alreadyPicked && handleSelectSuggestion(s)}
+                      disabled={alreadyPicked}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                        alreadyPicked
+                          ? 'bg-green-50 border-green-300 text-green-600 cursor-default'
+                          : isPreviewing
+                          ? 'bg-blue-100 border-blue-400 text-blue-700'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 cursor-pointer'
+                      }`}
+                    >
+                      {alreadyPicked ? '✓ ' : ''}{s.name}
+                      <span className={`ml-1 text-xs ${alreadyPicked ? 'text-green-400' : 'text-gray-400'}`}>{s.ticker}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Search input */}
+            <div className="relative mb-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={e => { setQuery(e.target.value); setPreview(null); setError(''); }}
+                  onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleDirectLookup(); }}
+                  placeholder="Search by company name or ticker… (Enter to look up directly)"
+                  className="border rounded px-3 py-2 text-sm flex-1"
+                />
+                {searching && (
+                  <div className="flex items-center px-3 text-gray-400 text-xs">Searching…</div>
+                )}
+                {loading && (
+                  <div className="flex items-center px-3 text-gray-400 text-xs">Loading…</div>
+                )}
+              </div>
+
+              {/* Dropdown results */}
+              {showDropdown && searchResults.length > 0 && (
+                <div className="absolute z-10 w-full bg-white border border-gray-200 rounded shadow-lg mt-1 max-h-56 overflow-y-auto">
+                  {searchResults.map((m, i) => (
+                    <button
+                      key={i}
+                      onMouseDown={() => handleSelectResult(m)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-b-0 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <span className="font-bold text-sm text-gray-800">{m['2. name']}</span>
+                        <span className="text-xs text-gray-400 ml-2">{m['4. region']}</span>
+                      </div>
+                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded flex-shrink-0">{m['1. symbol']}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
+
+            {/* Preview card */}
+            {preview && (
+              <div className="border rounded p-3 mb-4 bg-gray-50 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-bold text-gray-800">{preview.ticker}</p>
+                  {preview.name && <p className="text-xs text-gray-500 mb-0.5">{preview.name}</p>}
+                  <p className="text-xs text-gray-500">
+                    ${preview.current.toFixed(2)} &nbsp;·&nbsp;
+                    <span className={preview.changePct >= 0 ? 'text-green-600' : 'text-red-500'}>
+                      {preview.changePct >= 0 ? '+' : ''}{preview.changePct.toFixed(2)}% (7d)
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Sparkline prices={preview.prices} positive={preview.changePct >= 0} />
+                  <button
+                    onClick={handleAdd}
+                    disabled={!canAdd}
+                    className={`px-3 py-1.5 rounded text-sm font-semibold whitespace-nowrap ${
+                      canAdd ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {picks.find(p => p.ticker === preview.ticker) ? 'Already Added' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Selected picks */}
+            <div className="space-y-2 mb-6">
+              {[0, 1, 2].map(i => {
+                const pick = picks[i];
+                return (
+                  <div key={i} className={`border rounded p-3 flex items-center gap-3 ${pick ? 'bg-white' : 'bg-gray-50'}`}>
+                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    {pick ? (
+                      <>
+                        <div className="flex-1">
+                          <p className="font-bold text-sm text-gray-800">{pick.ticker}</p>
+                          {pick.name && <p className="text-xs text-gray-400">{pick.name}</p>}
+                          <p className="text-xs text-gray-500">
+                            ${pick.current.toFixed(2)} &nbsp;·&nbsp;
+                            <span className={pick.changePct >= 0 ? 'text-green-600' : 'text-red-500'}>
+                              {pick.changePct >= 0 ? '+' : ''}{pick.changePct.toFixed(2)}% (7d)
+                            </span>
+                          </p>
+                        </div>
+                        <button onClick={() => handleRemove(pick.ticker)} className="text-gray-300 hover:text-red-500 text-xl leading-none">×</button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">Empty slot — search above to add</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => picks.length === MAX && setShowReflection(true)}
+              disabled={picks.length < MAX}
+              className={`w-full py-2 rounded font-semibold transition-all ${
+                picks.length === MAX
+                  ? 'bg-blue-500 text-white hover:bg-blue-600'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {picks.length < MAX ? `Select ${MAX - picks.length} more stock${MAX - picks.length !== 1 ? 's' : ''}` : "Let's Begin →"}
+            </button>
+
+            {/* ── Reflection overlay ── */}
+            {showReflection && (
+              <div className="absolute inset-0 bg-white rounded-lg p-8 flex flex-col">
+                <h2 className="text-xl font-bold mb-1 text-blue-600">Before You Begin</h2>
+                <p className="text-gray-500 text-sm mb-5">
+                  Stating your reasoning before seeing results strengthens what you learn from the experience.
+                  This is optional — skip it if you prefer.
+                </p>
+
+                {/* Mini pick summary */}
+                <div className="flex gap-2 mb-5">
+                  {picks.map(p => (
+                    <div key={p.ticker} className="flex-1 border border-blue-100 rounded-lg p-3 text-center bg-blue-50">
+                      <p className="text-sm font-bold text-blue-700">{p.ticker}</p>
+                      {p.name && <p className="text-xs text-gray-400 mt-0.5 truncate">{p.name}</p>}
+                    </div>
+                  ))}
+                </div>
+
+                <label className="text-sm font-semibold text-gray-700 mb-1.5">
+                  Why did you choose these 3 stocks?
+                  <span className="font-normal text-gray-400 ml-1">(optional)</span>
+                </label>
+                <textarea
+                  value={reasoning}
+                  onChange={e => setReasoning(e.target.value)}
+                  placeholder="e.g., I chose Apple because I use their products every day. Tesla because I believe in clean energy. McDonald's because I know it as a stable business..."
+                  className="border rounded-lg p-3 text-sm text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  rows={4}
+                />
+                <p className="text-xs text-gray-400 mt-1.5 mb-6 leading-relaxed">
+                  Reflecting before seeing results is a core component of Bandura's mastery experience framework — it builds the habit of deliberate, reasoned decision-making.
+                </p>
+
+                <div className="flex gap-2 mt-auto">
+                  <button
+                    onClick={() => onClose(picks, '')}
+                    className="px-4 py-2 border border-gray-200 rounded text-gray-500 text-sm hover:bg-gray-50 transition-all"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => onClose(picks, reasoning)}
+                    className="flex-1 py-2 rounded font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-all"
+                  >
+                    Let's Begin →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Stock Card ─────────────────────────────────────────────────────────────
+    function StockCard({ stock }) {
+      const positive = stock.changePct >= 0;
+      const dollarChange = stock.current - stock.weekAgo;
+
+      const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      return (
+        <div className="bg-white shadow rounded p-5 flex flex-col gap-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <Tooltip tip="A ticker symbol is a short abbreviation (1–5 letters) that uniquely identifies a publicly traded company on a stock exchange. For example, AAPL represents Apple Inc.">
+                <span className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded mb-1">{stock.ticker}</span>
+              </Tooltip>
+              {stock.name && <p className="text-xs text-gray-400 mb-1">{stock.name}</p>}
+              <p className="text-2xl font-bold text-gray-800">${stock.current.toFixed(2)}</p>
+              <Tooltip tip="The change in this stock's closing price over the last 7 trading days. A positive number means the stock gained value; negative means it lost value.">
+                <p className={`text-sm font-semibold ${positive ? 'text-green-600' : 'text-red-500'}`}>
+                  {positive ? '+' : ''}{dollarChange.toFixed(2)} ({positive ? '+' : ''}{stock.changePct.toFixed(2)}%)
+                </p>
+              </Tooltip>
+            </div>
+            <Sparkline prices={stock.prices} positive={positive} />
+          </div>
+          <div className="text-xs text-gray-400 border-t pt-2 flex justify-between">
+            <Tooltip tip="The closing price 7 trading days ago — used as the starting point for the performance calculation above.">
+              <span>7 days ago: <strong className="text-gray-600">${stock.weekAgo.toFixed(2)}</strong></span>
+            </Tooltip>
+            <span>{fmt(stock.weekAgoDate)} → {fmt(stock.currentDate)}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Adaptive Learning Plan Data ──────────────────────────────────────────────
+    const LEARNING_PLANS = {
+      low: {
+        tier:        'Low Self-Efficacy',
+        color:       'text-red-600',
+        borderColor: 'border-red-400',
+        tagBg:       'bg-red-100 text-red-700',
+        intro:       'A score below 3.0 means financial decisions currently feel overwhelming — and you likely avoid or defer them. That is not a character flaw; it is a learned response. This 4-week pathway is grounded in Bandura\'s Self-Efficacy Theory and designed to rebuild your confidence from the ground up through structured, low-stakes experiences. No real money. No permanent decisions. Just guided practice.',
+        steps: [
           {
-            data: [45, 25, 15, 10, 5],
-            backgroundColor: ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"],
-            borderWidth: 1,
+            icon:      '🪞',
+            title:     'Step 1 — Name Your Financial Anxiety (Week 1)',
+            tag:       'Self-Awareness',
+            objective: 'Identify the specific financial situations that trigger avoidance so you can address them directly rather than as one undifferentiated dread.',
+            actions: [
+              'Write down 3 financial decisions you have put off in the last 6 months — e.g., checking your bank balance, setting up a savings account, reading an investment statement.',
+              'For each one, rate how anxious it makes you feel on a scale of 1–5.',
+              'Identify the most common theme across your list: Is it fear of making a mistake? Feeling excluded by financial language? Fear of confronting what you owe or own?',
+              'Pick the lowest-anxiety item on your list. That is the entry point for this plan.',
+            ],
+            reflection: 'What is one financial topic you have been pretending to understand in conversations? What would it feel like to openly admit you do not know — and look it up?',
+            why:        'Bandura\'s self-efficacy theory identifies physiological arousal (anxiety) as a primary barrier to confident behavior. Naming and ranking anxiety shifts it from a global, paralyzing dread into a specific, addressable problem — the first clinical step toward behavior change.',
+          },
+          {
+            icon:      '📚',
+            title:     'Step 2 — Build Your Financial Vocabulary (Week 1)',
+            tag:       'Cognitive Foundation',
+            objective: 'Remove vocabulary as a psychological barrier to financial engagement. You cannot feel confident in a language you do not speak.',
+            actions: [
+              'Learn one term per day for 5 days: Stock (a share of ownership in a company), Dividend (a cash payment companies make to shareholders), Market Cap (the total dollar value of a company\'s shares), Portfolio (your personal collection of investments), Index Fund (a fund that tracks a broad market index like the S&P 500).',
+              'For each term, write one sentence using it in your own words — not the dictionary definition.',
+              'Open your Daily News tab and read one article. Identify any word or phrase you do not understand and look it up before moving on.',
+              'By end of the week, practice explaining what a "stock portfolio" is to someone who has never heard of it. If you can explain it simply, you understand it.',
+            ],
+            reflection: 'Which of the 5 terms surprised you most? What did you assume it meant before you actually looked it up?',
+            why:        'Lusardi & Mitchell (2014) found that financial jargon functions as a psychological exclusion mechanism — people disengage not from lack of intelligence but from feeling that the language was not designed for them. Vocabulary acquisition directly and measurably increases perceived competence in any domain.',
+          },
+          {
+            icon:      '👁️',
+            title:     'Step 3 — Observe Without Deciding (Weeks 1–2)',
+            tag:       'Vicarious Learning',
+            objective: 'Build pattern recognition and comfort with market movement before any decision-making pressure is introduced.',
+            actions: [
+              'Check your 3 watchlist stocks every day at the same time for 7 consecutive days.',
+              'Each day, record whether each stock went up, down, or stayed flat. A simple table in a notes app works fine.',
+              'Read one article per day from your Daily News tab — without trying to act on the information.',
+              'After 7 days, write down one pattern you noticed across your stocks, even if you cannot fully explain why it happened.',
+            ],
+            reflection: 'Did any article you read this week seem to explain a price movement in one of your stocks? What connection did you notice between the news and the market?',
+            why:        'Vicarious learning — observing outcomes in a low-risk environment — is one of Bandura\'s four core pathways to self-efficacy. Building a mental model of how markets behave before you are required to act significantly reduces the anxiety that comes from feeling like "anything could happen at any moment."',
+          },
+          {
+            icon:      '🔎',
+            title:     'Step 4 — Learn One Company Inside Out (Week 2)',
+            tag:       'Deep Learning',
+            objective: 'Develop genuine understanding of one real business rather than shallow familiarity with three. Depth is a more powerful confidence builder than breadth at this stage.',
+            actions: [
+              'Pick the one stock from your watchlist that interests you most — ideally a company whose product or service you have personally used.',
+              'Research three things: What does this company actually do? How does it make money? Who are its two biggest competitors?',
+              'Find and read 2 articles specifically about this company in your Daily News tab.',
+              'Write a 3-sentence summary of what you learned, as if explaining it to a friend who has never heard of the company.',
+              'Bonus: find out when the company last reported quarterly earnings and whether it beat or missed expectations.',
+            ],
+            reflection: 'After researching it, does this company seem stronger or weaker than you initially assumed? What specifically changed — or confirmed — your first impression?',
+            why:        'Genuinely understanding one company gives you a concrete reference point — a real business you can reason about — from which to compare and evaluate others. It transforms "the market" from an intimidating abstraction into something grounded and human.',
+          },
+          {
+            icon:      '🧪',
+            title:     'Step 5 — Make Your First Virtual Allocation (Week 2)',
+            tag:       'Mastery Experience',
+            objective: 'Experience the psychological act of making an investment decision in a fully zero-risk environment. The goal is the experience of deciding — not the financial outcome.',
+            actions: [
+              'Decide how you would divide a virtual $1,000 across your 3 watchlist stocks.',
+              'Write down your specific reasoning for each allocation before you commit. "I am putting 50% in Apple because I use their products daily and trust the brand" is entirely valid reasoning.',
+              'Commit to not changing your allocation for 7 days — even if prices move.',
+              'At the end of 7 days, record the result: how much did your virtual $1,000 become?',
+            ],
+            reflection: 'How did making this decision feel? Was the hardest part choosing the amounts — or committing to them once chosen? What does that tell you about where your uncertainty lives?',
+            why:        'Mastery experience — completing a task successfully, even in simulation — is the single most powerful source of self-efficacy change (Bandura, 1977). The psychological benefit comes from the act of deciding under uncertainty and surviving the result, not from being right.',
+          },
+          {
+            icon:      '🔄',
+            title:     'Step 6 — Review Your Decision Without Judgment (Week 3)',
+            tag:       'Self-Reflection',
+            objective: 'Learn to separate the quality of your reasoning from the outcome — one of the most important cognitive skills in long-term investing.',
+            actions: [
+              'Review how your virtual $1,000 performed after 7 days.',
+              'Whether it went up or down, ask yourself: "Was my reasoning sound?" — not "Was I right?"',
+              'Write down one thing you would research more before making the same allocation again.',
+              'Go back to 2–3 news articles from Week 2 — do any of them explain what happened to your stocks over that period?',
+              'Identify one factor you did not consider at all when you made your allocation.',
+            ],
+            reflection: 'A good decision can have a bad outcome, and a bad decision can have a good outcome. Which category do you think your allocation fell into — and why? Can you separate the two?',
+            why:        'Outcome bias — judging the quality of a decision solely by its result — is one of the most destructive cognitive patterns in personal finance. Markets are inherently uncertain: a sound process will lose money sometimes, and a reckless one will occasionally profit. Practicing process-based evaluation now protects you from the most common beginner mistakes later.',
+          },
+          {
+            icon:      '🌐',
+            title:     'Step 7 — Widen Your View (Weeks 3–4)',
+            tag:       'Systems Thinking',
+            objective: 'Understand that individual stocks do not move in isolation — market context explains most short-term price movement, not individual company quality.',
+            actions: [
+              'Look up the S&P 500 performance for the same 7-day period as your virtual portfolio.',
+              'Compare: did your stocks generally move with the broader market or against it? This relationship is called market correlation.',
+              'Check whether your 3 watchlist stocks are from the same industry or from different sectors.',
+              'If they are all from the same sector (e.g., all technology), research what "concentration risk" means and how it applies to your portfolio.',
+              'Read about what an index fund is and why many financial professionals recommend them as a starting point for new investors.',
+            ],
+            reflection: 'If all 3 of your stocks dropped in the same week, would that tell you more about each individual company — or more about the broader market? How does your answer reshape how you think about diversification?',
+            why:        'A common early-stage error is attributing all price movement to individual company performance. Understanding macro-level forces — interest rates, inflation, sector trends, market cycles — is a key cognitive leap that separates novice investors from those with durable confidence.',
+          },
+          {
+            icon:      '🎯',
+            title:     'Step 8 — Re-Assess and Set Your Next Target (Week 4)',
+            tag:       'Goal Setting',
+            objective: 'Use your FSES score as a compass — not a verdict — and set one specific, measurable goal that carries your momentum into the next 30 days.',
+            actions: [
+              'Navigate to the My Scores tab and review your baseline FSES score.',
+              'Reflect honestly: has your financial confidence shifted over these 4 weeks — even slightly? You do not need to retake the assessment yet; just notice the difference in how you feel reading a financial headline compared to Week 1.',
+              'Write down one financial concept you now genuinely understand that you did not when you started.',
+              'Set one specific, measurable goal for the next 30 days. Strong examples: "I will check my 3 stocks every weekday for 30 days," "I will read one financial article per day," or "I will research what an ETF is and write down whether I think it is right for me."',
+            ],
+            reflection: 'Where did you feel most confident over the past 4 weeks? Where did you still feel most out of your depth? Those two answers are your exact roadmap for what comes next.',
+            why:        'Goal-setting theory (Locke & Latham, 2002) demonstrates that specific, written goals outperform vague intentions by a factor of 3. The act of committing a goal to writing is itself a signal of self-belief — one of the most direct behavioral indicators of improving self-efficacy.',
           },
         ],
+      },
+      moderate: {
+        tier:        'Moderate Self-Efficacy',
+        color:       'text-yellow-600',
+        borderColor: 'border-yellow-400',
+        tagBg:       'bg-yellow-100 text-yellow-700',
+        intro:       'You have a solid foundation but tend to second-guess yourself under pressure. Your learning path focuses on structured exposure to real scenarios to convert your knowledge into confident action.',
+        steps: [
+          {
+            icon: '⚖️',
+            title: 'Step 1 — Diversification Challenge (Week 1)',
+            tag:  'Mastery Experience',
+            desc: 'Pick 3 stocks from 3 different sectors (e.g., one tech, one healthcare, one energy). Observe how they move relative to each other over 7 days. The goal is to understand that diversification reduces volatility — not returns.',
+          },
+          {
+            icon: '📰',
+            title: 'Step 2 — News-to-Decision Drill (Week 1–2)',
+            tag:  'Applied Learning',
+            desc: 'Each day, read one headline from your tailored News tab. Before checking your portfolio, predict whether the news will move your stocks up or down. Track your prediction accuracy over 5 days.',
+          },
+          {
+            icon: '📉',
+            title: 'Step 3 — Simulate a Down Market (Week 2)',
+            tag:  'Stress Testing',
+            desc: 'Intentionally pick one stock you believe is risky. Allocate 30% of your virtual portfolio to it. The goal is not to win — it is to experience loss without real consequences and observe your emotional response.',
+          },
+          {
+            icon: '🔄',
+            title: 'Step 4 — Rebalance Your Portfolio (Week 3)',
+            tag:  'Active Management',
+            desc: 'After observing your portfolio for 2 weeks, remove one underperforming stock and replace it with a new one. Practice the act of changing your mind based on evidence — a critical skill that separates confident investors from stubborn ones.',
+          },
+          {
+            icon: '📊',
+            title: 'Step 5 — Post-Assessment (Week 4)',
+            tag:  'Self-Reflection',
+            desc: 'Retake the FSES assessment. Your target is to move from Moderate to High (≥ 4.0). If your score has not changed, revisit Step 3 — the stress-testing exercise is the most powerful calibration tool in this plan.',
+          },
+        ],
+      },
+      high: {
+        tier:        'High Self-Efficacy',
+        color:       'text-green-600',
+        borderColor: 'border-green-400',
+        tagBg:       'bg-green-100 text-green-700',
+        intro:       'You approach financial decisions with strong confidence. Your learning path is designed to test and calibrate that confidence — ensuring it is grounded in skill, not overconfidence. Research shows high-efficacy individuals are most at risk of the Dunning-Kruger effect in financial markets (Kramer, 2016).',
+        steps: [
+          {
+            icon: '🏆',
+            title: 'Step 1 — Beat the Benchmark (Week 1)',
+            tag:  'Performance Challenge',
+            desc: 'Build a 3-stock portfolio and try to outperform the S&P 500 over 7 days. Track your portfolio daily against the SPY ETF as your benchmark. This exercise reveals whether your confidence is backed by selection skill.',
+          },
+          {
+            icon: '🧠',
+            title: 'Step 2 — Contrarian Investing Drill (Week 1–2)',
+            tag:  'Cognitive Calibration',
+            desc: 'Pick one stock you would normally never invest in — one that contradicts your instincts. Allocate 20% of your virtual portfolio to it and track it for 2 weeks. The goal is to challenge your existing mental models.',
+          },
+          {
+            icon: '📰',
+            title: 'Step 3 — Counter-Narrative Exercise (Week 2)',
+            tag:  'Confirmation Bias Training',
+            desc: 'For each stock in your portfolio, find one credible article that argues the opposite of your position. Read it seriously. If you cannot find a counter-argument, you may not understand the investment as well as you think.',
+          },
+          {
+            icon: '🎓',
+            title: 'Step 4 — Teach It Back (Week 3)',
+            tag:  'Mastery Verification',
+            desc: 'Write a 3-sentence explanation of why you chose each of your 3 stocks — as if explaining to a friend with no financial knowledge. The "Feynman Technique" shows that if you cannot explain it simply, you do not fully understand it.',
+          },
+          {
+            icon: '📊',
+            title: 'Step 5 — Calibration Check (Week 4)',
+            tag:  'Self-Reflection',
+            desc: 'Retake the FSES assessment. High-efficacy users who complete the contrarian and counter-narrative exercises often see a slight score decrease — and that is a good sign. It means your confidence is becoming more calibrated, not less.',
+          },
+        ],
+      },
+    };
+
+    // ── Adaptive Learning Plan Component ──────────────────────────────────────
+    function AdaptiveLearningPlan({ baselineFSES, watchlist }) {
+      const tier = baselineFSES !== null
+        ? (baselineFSES >= 4 ? 'high' : baselineFSES >= 3 ? 'moderate' : 'low')
+        : 'low';
+      const plan        = LEARNING_PLANS[tier];
+      const hasWatchlist = watchlist && watchlist.length > 0;
+      const steps       = hasWatchlist ? generatePersonalizedSteps(watchlist, tier) : plan.steps;
+      const stepCount   = steps.length;
+      const stepsKey    = hasWatchlist
+        ? 'fl_steps_' + tier + '_' + watchlist.map(s => s.ticker).sort().join('_')
+        : 'fl_steps_' + tier;
+
+      const [expanded,       setExpanded]       = useState(null);
+      const [showPostForm,   setShowPostForm]    = useState(false);
+      const [completedSteps, setCompletedSteps] = useState(() => {
+        try { const v = localStorage.getItem(stepsKey); if (v) return JSON.parse(v); } catch {}
+        return new Array(stepCount).fill(false);
+      });
+      const [postAnswers, setPostAnswers] = useState(() => {
+        try { const v = localStorage.getItem('fl_post_answers'); if (v) return JSON.parse(v); } catch {}
+        return {};
+      });
+      const [postScore, setPostScore] = useState(() => {
+        try { const v = localStorage.getItem('fl_post_fses'); if (v) return parseFloat(v); } catch {}
+        return null;
+      });
+      const [elapsed, setElapsed] = useState(() => {
+        try { const v = localStorage.getItem('fl_session_start'); return v ? Date.now() - Number(v) : 0; } catch { return 0; }
+      });
+
+      // Sync completedSteps when stepsKey changes (tier or watchlist composition changes)
+      React.useEffect(() => {
+        try { const v = localStorage.getItem(stepsKey); if (v) { setCompletedSteps(JSON.parse(v)); return; } } catch {}
+        setCompletedSteps(new Array(stepCount).fill(false));
+      }, [stepsKey]);
+
+      // Poll elapsed time every 30s; stop once unlocked
+      React.useEffect(() => {
+        const SESSION_MS = 20 * 60 * 1000;
+        if (elapsed >= SESSION_MS) return;
+        const id = setInterval(() => {
+          try {
+            const v = localStorage.getItem('fl_session_start');
+            if (v) setElapsed(Date.now() - Number(v));
+          } catch {}
+        }, 30000);
+        return () => clearInterval(id);
+      }, [elapsed]);
+
+      if (baselineFSES === null) return null;
+
+      const doneCount = completedSteps.filter(Boolean).length;
+      const allDone   = doneCount === stepCount;
+
+      function toggleStep(i) {
+        const next = completedSteps.map((v, idx) => idx === i ? !v : v);
+        setCompletedSteps(next);
+        try { localStorage.setItem(stepsKey, JSON.stringify(next)); } catch {}
+      }
+
+      function submitPostFSES() {
+        const vals = FSES_QUESTIONS.map((_, i) => Number(postAnswers[i] || 0));
+        if (vals.some(v => !v)) return;
+        const avg     = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const rounded = Math.round(avg * 10) / 10;
+        setPostScore(rounded);
+        setShowPostForm(false);
+        try {
+          localStorage.setItem('fl_post_fses', String(rounded));
+          localStorage.setItem('fl_post_answers', JSON.stringify(postAnswers));
+        } catch {}
+      }
+
+      const fsesLabel = (score) => {
+        if (score >= 4) return { label: 'High',     color: 'text-green-600' };
+        if (score >= 3) return { label: 'Moderate', color: 'text-yellow-600' };
+        return               { label: 'Low',       color: 'text-red-500' };
       };
 
+      // Investment performance from saved allocation
+      const allocKey  = watchlist && watchlist.length > 0
+        ? 'fl_alloc_' + watchlist.map(s => s.ticker).sort().join('_')
+        : null;
+      const allocData = (() => {
+        if (!allocKey) return null;
+        try { const v = localStorage.getItem(allocKey); return v ? JSON.parse(v) : null; } catch { return null; }
+      })();
+      const isAllocLocked = (() => {
+        if (!allocKey) return false;
+        try { return localStorage.getItem(allocKey + '_locked') === 'true'; } catch { return false; }
+      })();
+
+      return (
+        <div className={`bg-white shadow rounded p-6 border-t-4 ${plan.borderColor}`}>
+          {/* Header */}
+          <div className="flex items-start justify-between mb-1">
+            <h3 className="text-lg font-bold text-gray-800">Your Adaptive Learning Plan</h3>
+            <span className={`text-xs font-semibold px-2 py-1 rounded ${plan.tagBg}`}>{plan.tier}</span>
+          </div>
+          <p className="text-xs text-gray-400 italic mb-3">Personalized based on your FSES score · Grounded in Bandura's Self-Efficacy Theory</p>
+          <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+            {hasWatchlist ? (() => {
+              const names = watchlist.map(s => s.name || s.ticker).join(', ');
+              const intros = {
+                low:      `A score below 3.0 means financial decisions still feel uncertain — and that's exactly why this pathway starts with what you already own. Over the next 4 weeks, you'll build genuine understanding of ${names} from the ground up: what these companies do, why their sectors matter, and how to read their price movements without anxiety.`,
+                moderate: `You have a solid foundation. This pathway uses your actual holdings — ${names} — as the laboratory. Every exercise is grounded in real companies you chose and real data from the past week, not generic examples.`,
+                high:     `Strong confidence is the starting point, not the destination. This pathway uses ${names} to test whether your confidence is calibrated. Every step asks you to go deeper, argue the opposite side, and quantify what you actually know versus what you're assuming.`,
+              };
+              return intros[tier];
+            })() : plan.intro}
+          </p>
+
+          {/* Progress bar */}
+          <div className="mb-5">
+            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+              <span>{doneCount} of {stepCount} steps complete</span>
+              {allDone && <span className="text-green-600 font-semibold">All done!</span>}
+            </div>
+            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-2.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${(doneCount / stepCount) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Steps — accordion with checkboxes */}
+          <div className="space-y-3">
+            {steps.map((step, i) => (
+              <div key={i} className={`border rounded-lg overflow-hidden transition-colors ${completedSteps[i] ? 'border-green-200' : 'border-gray-200'}`}>
+                <div className="flex items-stretch">
+                  {/* Checkbox zone */}
+                  <button
+                    onClick={() => toggleStep(i)}
+                    className={`flex-shrink-0 flex items-center justify-center w-12 border-r transition-colors ${completedSteps[i] ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
+                    title={completedSteps[i] ? 'Mark incomplete' : 'Mark complete'}
+                  >
+                    {completedSteps[i]
+                      ? <span className="text-green-600 text-lg font-bold">✓</span>
+                      : <span className="w-5 h-5 rounded border-2 border-gray-300 inline-block" />
+                    }
+                  </button>
+
+                  {/* Accordion toggle */}
+                  <button
+                    onClick={() => setExpanded(expanded === i ? null : i)}
+                    className={`flex-1 text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${completedSteps[i] ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{step.icon}</span>
+                      <div>
+                        <p className={`text-sm font-semibold ${completedSteps[i] ? 'line-through text-gray-400' : 'text-gray-800'}`}>{step.title}</p>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${plan.tagBg}`}>{step.tag}</span>
+                      </div>
+                    </div>
+                    <span className="text-gray-400 text-sm flex-shrink-0">{expanded === i ? '▲' : '▼'}</span>
+                  </button>
+                </div>
+
+                {expanded === i && (
+                  <div className="px-4 pb-5 pt-3 bg-gray-50 border-t space-y-4">
+                    {step.desc && <p className="text-sm text-gray-700 leading-relaxed">{step.desc}</p>}
+                    {step.objective && (
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Objective</p>
+                        <p className="text-sm text-gray-700 leading-relaxed">{step.objective}</p>
+                      </div>
+                    )}
+                    {step.actions && (
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Your Actions</p>
+                        <ul className="space-y-2.5">
+                          {step.actions.map((action, j) => (
+                            <li key={j} className="flex items-start gap-3 text-sm text-gray-700">
+                              <span className={`mt-0.5 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${plan.tagBg}`}>{j + 1}</span>
+                              <span className="leading-relaxed">{action}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {step.reflection && (
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3.5">
+                        <p className="text-xs font-bold text-blue-500 uppercase tracking-wide mb-1.5">Reflect</p>
+                        <p className="text-sm text-blue-900 italic leading-relaxed">{step.reflection}</p>
+                      </div>
+                    )}
+                    {step.why && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-3.5">
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">Why This Works</p>
+                        <p className="text-xs text-gray-600 leading-relaxed">{step.why}</p>
+                      </div>
+                    )}
+                    <div className="pt-1">
+                      <button
+                        onClick={() => { toggleStep(i); setExpanded(null); }}
+                        className={`text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${completedSteps[i] ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                      >
+                        {completedSteps[i] ? 'Mark as Incomplete' : 'Mark as Complete ✓'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Investment Performance — unlocked after all steps done */}
+          {allDone && allocData && isAllocLocked && watchlist && watchlist.length > 0 && (() => {
+            const rows = watchlist.map(s => {
+              const allocated    = Number(allocData[s.ticker] || 0);
+              const changePct    = s.changePct || 0;
+              const currentValue = allocated * (1 + changePct / 100);
+              const gain         = currentValue - allocated;
+              return { ticker: s.ticker, name: s.name || s.ticker, allocated, currentValue, gain, changePct };
+            });
+            const totalAllocated = rows.reduce((sum, r) => sum + r.allocated, 0);
+            const totalCurrent   = rows.reduce((sum, r) => sum + r.currentValue, 0);
+            const totalGain      = totalCurrent - totalAllocated;
+            return (
+              <div className="mt-6 border-t pt-5">
+                <h4 className="text-base font-bold text-gray-800 mb-1">Your 1-Week Investment Performance</h4>
+                <p className="text-xs text-gray-400 mb-1">
+                  If you had invested your virtual $1,000 one week ago in these proportions, here's what would have happened.
+                </p>
+                {watchlist[0] && watchlist[0].weekAgoDate && (
+                  <p className="text-xs text-blue-500 font-medium mb-4">
+                    Period: {watchlist[0].weekAgoDate} → {watchlist[0].currentDate} (7 trading days of real market data)
+                  </p>
+                )}
+                <div className="space-y-3">
+                  {rows.map(r => (
+                    <div key={r.ticker} className="bg-gray-50 border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{r.ticker}</span>
+                          <span className="text-sm text-gray-700 truncate max-w-32">{r.name}</span>
+                        </div>
+                        <span className={`text-sm font-bold ${r.gain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {r.gain >= 0 ? '+' : ''}${r.gain.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>Invested: <strong>${r.allocated.toFixed(2)}</strong></span>
+                        <span>Value now: <strong>${r.currentValue.toFixed(2)}</strong></span>
+                        <span className={`font-semibold ${r.changePct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {r.changePct >= 0 ? '+' : ''}{r.changePct.toFixed(2)}% (7d)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className={`rounded-lg p-4 flex items-center justify-between ${totalGain >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-0.5">Total Portfolio Value</p>
+                      <p className="text-2xl font-bold text-gray-800">${totalCurrent.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500 mb-0.5">Overall Gain / Loss</p>
+                      <p className={`text-xl font-bold ${totalGain >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {totalGain >= 0 ? '+' : ''}${totalGain.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Post-FSES Assessment — unlocked after all steps done OR 20-minute time gate */}
+          {(allDone || elapsed >= 20 * 60 * 1000) && (
+            <div className="mt-6 border-t pt-5">
+              <h4 className="text-base font-bold text-gray-800 mb-1">Post-Learning FSES Assessment</h4>
+              <p className="text-sm text-gray-500 mb-4">
+                {allDone
+                  ? "You've completed the learning pathway — retake the self-efficacy assessment to see how your confidence has grown."
+                  : "You've spent time with the platform and your portfolio data. Retake the self-efficacy assessment to measure any shift in your financial confidence."}
+              </p>
+
+              {postScore !== null ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Before</p>
+                      <p className="text-3xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(baselineFSES).color}`}>{fsesLabel(baselineFSES).label}</p>
+                    </div>
+                    <div className={`rounded-lg p-4 flex flex-col items-center justify-center border ${(postScore - baselineFSES) >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <p className="text-xs text-gray-400 mb-1">Change</p>
+                      <p className={`text-3xl font-bold ${(postScore - baselineFSES) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {(postScore - baselineFSES) >= 0 ? '+' : ''}{(postScore - baselineFSES).toFixed(1)}
+                      </p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">After</p>
+                      <p className="text-3xl font-bold text-blue-700">{postScore.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(postScore).color}`}>{fsesLabel(postScore).label}</p>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                    <p className="text-sm text-blue-900 leading-relaxed">
+                      {postScore > baselineFSES
+                        ? `Your financial self-efficacy improved by ${(postScore - baselineFSES).toFixed(1)} points. Engaging with real market data and structured reflection is working — keep building on this momentum.`
+                        : postScore === baselineFSES
+                        ? "Your score held steady. That's normal — self-efficacy shifts gradually. Continue working through the activities and retake to track your progress over time."
+                        : "Your score dipped slightly. This can happen when new knowledge reveals gaps you weren't aware of before — that's actually a sign of growth. Keep going."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPostScore(null);
+                      setPostAnswers({});
+                      setShowPostForm(true);
+                      try { localStorage.removeItem('fl_post_fses'); localStorage.removeItem('fl_post_answers'); } catch {}
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  >Retake assessment</button>
+                </div>
+              ) : showPostForm ? (
+                <div className="space-y-4">
+                  {FSES_QUESTIONS.map((q, i) => (
+                    <div key={i} className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Question {i + 1} of {FSES_QUESTIONS.length}</p>
+                      <p className="text-sm font-medium text-gray-800 mb-3">"{q}"</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {[1,2,3,4,5].map(val => (
+                          <button
+                            key={val}
+                            onClick={() => setPostAnswers(prev => ({ ...prev, [i]: val }))}
+                            className={`w-10 h-10 rounded-lg border-2 text-sm font-bold transition-colors ${postAnswers[i] === val ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'}`}
+                          >{val}</button>
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                        <span>Not at all confident</span>
+                        <span>Completely confident</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={submitPostFSES}
+                      disabled={FSES_QUESTIONS.some((_, i) => !postAnswers[i])}
+                      className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >See My Results</button>
+                    <button
+                      onClick={() => setShowPostForm(false)}
+                      className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPostForm(true)}
+                  className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                >Take Post-Assessment →</button>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400 mt-5 italic">
+            This plan adapts as your confidence grows. Retake the FSES assessment at any time to unlock a new path.
+          </p>
+        </div>
+      );
+    }
+
+    // ── Allocation Section ────────────────────────────────────────────────────
+    function AllocationSection({ watchlist }) {
+      const BUDGET     = 1000;
+      const storeKey   = 'fl_alloc_' + watchlist.map(s => s.ticker).sort().join('_');
+      const lockedKey  = storeKey + '_locked';
+
+      const [amounts, setAmounts] = useState(() => {
+        try { const v = localStorage.getItem(storeKey); if (v) return JSON.parse(v); } catch {}
+        return Object.fromEntries(watchlist.map(s => [s.ticker, '']));
+      });
+      const [locked, setLocked] = useState(() => {
+        try { return localStorage.getItem(lockedKey) === 'true'; } catch { return false; }
+      });
+
+      useEffect(() => { try { localStorage.setItem(storeKey,  JSON.stringify(amounts)); } catch {} }, [JSON.stringify(amounts)]);
       useEffect(() => {
-        if (tab === "portfolio" && chartRef.current) {
-          if (chartInstanceRef.current) chartInstanceRef.current.destroy();
-          const ctx = chartRef.current.getContext("2d");
-          chartInstanceRef.current = new Chart(ctx, {
-            type: "doughnut",
-            data: pieData,
-            options: {
-              responsive: true,
-              plugins: {
-                legend: { position: "bottom" },
-                tooltip: {
-                  callbacks: {
-                    label: function (tooltipItem) {
-                      const total = pieData.datasets[0].data.reduce((a, b) => a + b, 0);
-                      const value = pieData.datasets[0].data[tooltipItem.dataIndex];
-                      const percent = ((value / total) * 100).toFixed(1);
-                      return `${pieData.labels[tooltipItem.dataIndex]}: ${percent}%`;
-                    },
-                  },
-                },
-              },
-            },
-          });
+        try { localStorage.setItem(lockedKey, String(locked)); } catch {}
+        // Timer starts only once the $1k allocation is confirmed — stamp now if not already set
+        if (locked) {
+          try { if (!localStorage.getItem('fl_session_start')) localStorage.setItem('fl_session_start', String(Date.now())); } catch {}
         }
-      }, [tab]);
+      }, [locked]);
+
+      const total   = watchlist.reduce((sum, s) => sum + (Number(amounts[s.ticker]) || 0), 0);
+      const remaining = BUDGET - total;
+      const isOver    = total > BUDGET;
+      const canConfirm = total > 0 && !isOver;
+
+      const update = (ticker, val) => {
+        const num = val === '' ? '' : Math.max(0, Number(val));
+        setAmounts(prev => ({ ...prev, [ticker]: num }));
+      };
+
+      // ── Confirmed summary ──
+      if (locked) {
+        return (
+          <div className="bg-white shadow rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-800">Your Portfolio Allocation</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  ${total.toFixed(0)} invested one week ago · {remaining > 0 ? `$${remaining.toFixed(0)} held as cash · ` : ''}complete the learning pathway to see results
+                </p>
+              </div>
+              <button
+                onClick={() => setLocked(false)}
+                className="text-xs text-blue-500 border border-blue-200 rounded px-2.5 py-1 hover:bg-blue-50 transition-all"
+              >
+                Edit
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {watchlist.map(s => {
+                const amt    = Number(amounts[s.ticker]) || 0;
+                const pct    = total > 0 ? (amt / total) * 100 : 0;
+                const shares = amt > 0 ? amt / s.current : 0;
+                return (
+                  <div key={s.ticker}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <Tooltip tip="A ticker symbol is a short abbreviation that uniquely identifies a publicly traded company on a stock exchange.">
+                          <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{s.ticker}</span>
+                        </Tooltip>
+                        {s.name && <span className="text-sm text-gray-600">{s.name}</span>}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-gray-800">${amt.toFixed(0)}</span>
+                        <span className="text-xs text-gray-400 ml-2">≈ {shares.toFixed(3)} shares</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">{pct.toFixed(1)}% of invested portfolio</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-3 border-t flex justify-between items-center">
+              <span className="text-sm text-gray-500">Total invested</span>
+              <span className="text-sm font-bold text-gray-800">${total.toFixed(0)} <span className="font-normal text-gray-400">/ $1,000</span></span>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Input view ──
+      return (
+        <div className="bg-white shadow rounded-lg p-5">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">Allocate Your Virtual $1,000</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Imagine you invested this money one week ago. Decide how to split it across your stocks — then complete the learning pathway to see how you would have done.
+              </p>
+            </div>
+            <span className={`text-sm font-bold flex-shrink-0 ml-4 ${isOver ? 'text-red-500' : 'text-gray-600'}`}>
+              {isOver ? `-$${(total - BUDGET).toFixed(0)} over` : `$${remaining.toFixed(0)} left`}
+            </span>
+          </div>
+
+          {/* Budget progress bar */}
+          <div className="w-full bg-gray-100 rounded-full h-2 mt-3 mb-5">
+            <div
+              className={`h-2 rounded-full transition-all duration-200 ${isOver ? 'bg-red-400' : 'bg-blue-500'}`}
+              style={{ width: `${Math.min(100, (total / BUDGET) * 100)}%` }}
+            />
+          </div>
+
+          <div className="space-y-3 mb-5">
+            {watchlist.map(s => {
+              const amt    = Number(amounts[s.ticker]) || 0;
+              const shares = amt > 0 ? amt / s.current : 0;
+              const pct    = total > 0 ? (amt / total) * 100 : 0;
+              return (
+                <div key={s.ticker} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Tooltip tip="A ticker symbol is a short abbreviation that uniquely identifies a publicly traded company on a stock exchange.">
+                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{s.ticker}</span>
+                      </Tooltip>
+                      {s.name && <span className="text-sm font-medium text-gray-700">{s.name}</span>}
+                    </div>
+                    <Tooltip tip="The most recent closing price per share for this stock.">
+                      <span className="text-xs text-gray-400 cursor-help border-b border-dashed border-gray-300">${s.current.toFixed(2)} / share</span>
+                    </Tooltip>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-400 font-medium text-sm">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={BUDGET}
+                      step="10"
+                      value={amounts[s.ticker]}
+                      onChange={e => update(s.ticker, e.target.value)}
+                      placeholder="0"
+                      className="border rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-300 text-gray-800"
+                    />
+                    {amt > 0 && (
+                      <span className="text-xs text-gray-500">
+                        <Tooltip tip="The number of shares you would receive for this dollar amount at the current price. Fractional shares are shown since this is a virtual portfolio.">
+                          <span className="border-b border-dashed border-gray-300">≈ {shares.toFixed(3)} shares</span>
+                        </Tooltip>
+                        {total > 0 && (
+                          <span className="ml-2 text-gray-400">({pct.toFixed(0)}%)</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => canConfirm && setLocked(true)}
+            disabled={!canConfirm}
+            className={`w-full py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              canConfirm
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : isOver
+                ? 'bg-red-100 text-red-500 cursor-not-allowed'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {total === 0
+              ? 'Enter amounts to allocate'
+              : isOver
+              ? `Over budget by $${(total - BUDGET).toFixed(0)} — reduce to continue`
+              : 'Confirm Allocation'}
+          </button>
+        </div>
+      );
+    }
+
+    // ── Scores Tab ─────────────────────────────────────────────────────────────
+    function ScoresTab({ baselineFSES, participantFlags, onGoToLearningPath }) {
+      const fsesInterpret = (score) => {
+        if (score >= 4) return { label: 'High Self-Efficacy',     color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
+        if (score >= 3) return { label: 'Moderate Self-Efficacy', color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' };
+        return              { label: 'Low Self-Efficacy',        color: 'text-red-500',    bg: 'bg-red-50 border-red-200' };
+      };
+
+      return (
+        <div className="space-y-5">
+          <div className="bg-white shadow rounded p-6">
+            <h2 className="text-xl font-bold mb-1">Your FSES Score</h2>
+            <p className="text-gray-500 text-sm mb-5">Recorded at the start of your session.</p>
+            {baselineFSES !== null ? (() => {
+              const interp = fsesInterpret(baselineFSES);
+              const flagged = participantFlags && (participantFlags.isFinanceMajor || participantFlags.hasBrokerage);
+              const flagDetails = participantFlags ? [
+                participantFlags.isFinanceMajor && 'finance / accounting background',
+                participantFlags.hasBrokerage   && 'active brokerage account',
+              ].filter(Boolean) : [];
+              return (
+                <>
+                  <div className={`border rounded p-5 flex items-center gap-5 ${interp.bg}`}>
+                    <div className="text-center min-w-fit">
+                      <p className="text-5xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className="text-sm text-gray-400 mt-1">out of 5</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-bold mb-1 ${interp.color}`}>{interp.label}</p>
+                      <p className="text-sm text-gray-600">
+                        {baselineFSES >= 4
+                          ? 'You approach financial decisions with strong confidence and initiative. The goal is to ensure that confidence is well-founded and continues to be refined through experience.'
+                          : baselineFSES >= 3
+                          ? 'You have a reasonable baseline of financial confidence but still second-guess yourself at times. Structured exposure to real financial scenarios can help close that gap.'
+                          : 'You tend to avoid or defer financial decisions due to low confidence. Building foundational knowledge and celebrating small wins can significantly shift this over time.'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  {flagged && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-3 flex items-start gap-2">
+                      <span className="text-amber-500 text-sm mt-0.5">⚑</span>
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700 mb-0.5">Research flag — Expert respondent</p>
+                        <p className="text-xs text-amber-700">
+                          This respondent reported: {flagDetails.join(' and ')}. Their FSES score may reflect domain expertise rather than general financial self-efficacy and should be interpreted accordingly in research contexts.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })() : (
+              <p className="text-gray-400 text-sm italic">Score not yet recorded.</p>
+            )}
+          </div>
+
+          <div className="bg-white shadow rounded p-6">
+            <h3 className="text-lg font-bold mb-1">What is the FSES?</h3>
+            <p className="text-xs text-gray-400 mb-4 italic">Based on Lown et al.'s Financial Self-Efficacy Scale</p>
+            <p className="text-sm text-gray-700 mb-3">
+              The <strong>Financial Self-Efficacy Scale (FSES)</strong> measures your belief in your own ability to manage
+              financial decisions. It is grounded in Albert Bandura's Self-Efficacy Theory — the idea that confidence in
+              a domain directly shapes how we behave within it.
+            </p>
+            <p className="text-sm text-gray-700 mb-5">
+              Your score is the average of three statements rated 1–5. It measures your <em>belief in your own
+              capability</em>, which research shows is a strong predictor of long-term financial behavior.
+            </p>
+            <div className="grid grid-cols-3 gap-3 text-center text-xs">
+              <div className="bg-red-50 border border-red-200 rounded p-3">
+                <p className="font-bold text-red-600 text-base mb-1">1.0 – 2.9</p>
+                <p className="font-semibold text-gray-700 mb-1">Low</p>
+                <p className="text-gray-500">Tends to avoid financial decisions or defer entirely to others</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                <p className="font-bold text-yellow-600 text-base mb-1">3.0 – 3.9</p>
+                <p className="font-semibold text-gray-700 mb-1">Moderate</p>
+                <p className="text-gray-500">Some confidence but often second-guesses under pressure</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded p-3">
+                <p className="font-bold text-green-600 text-base mb-1">4.0 – 5.0</p>
+                <p className="font-semibold text-gray-700 mb-1">High</p>
+                <p className="text-gray-500">Approaches financial decisions with confidence and initiative</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white shadow rounded p-6">
+            <h3 className="text-lg font-bold mb-3">Why Self-Efficacy Matters in Finance</h3>
+            <div className="space-y-3">
+              {[
+                { title: 'It predicts behavior, not just feelings.', body: 'People with high financial self-efficacy are more likely to save consistently, seek financial advice, and follow through on investment plans — regardless of their actual knowledge level.' },
+                { title: 'Low efficacy creates a harmful cycle.', body: 'When people believe they are bad at finance, they avoid financial tasks. Avoidance prevents learning. Lack of learning reinforces the belief. The FSES helps identify where someone is in this cycle.' },
+                { title: 'It can be changed.', body: "Bandura identified four ways to build self-efficacy: mastery experiences (doing and succeeding), vicarious learning (seeing others succeed), social persuasion (encouragement), and managing anxiety around financial decisions." },
+              ].map((item, i) => (
+                <div key={i} className="border-l-4 border-blue-400 pl-4">
+                  <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Post-assessment status card */}
+          {baselineFSES !== null && (() => {
+            const SESSION_MS  = 20 * 60 * 1000;
+            const sessionStart = (() => { try { const v = localStorage.getItem('fl_session_start'); return v ? Number(v) : null; } catch { return null; } })();
+            const postScore    = (() => { try { const v = localStorage.getItem('fl_post_fses');    return v ? parseFloat(v) : null; } catch { return null; } })();
+            const elapsed      = sessionStart ? Date.now() - sessionStart : 0;
+            const elapsedMin   = Math.min(20, Math.floor(elapsed / 60000));
+            const unlocked     = elapsed >= SESSION_MS;
+            const pct          = Math.min(100, (elapsed / SESSION_MS) * 100);
+
+            const fsesLabel = s => s >= 4 ? { label: 'High', color: 'text-green-600' } : s >= 3 ? { label: 'Moderate', color: 'text-yellow-600' } : { label: 'Low', color: 'text-red-500' };
+
+            if (postScore !== null) {
+              const delta = postScore - baselineFSES;
+              return (
+                <div className="bg-white shadow rounded p-6">
+                  <h3 className="text-lg font-bold mb-0.5">Financial Self-Efficacy: Before &amp; After</h3>
+                  <p className="text-xs text-gray-400 mb-5">Financial Self-Efficacy Scale (FSES) · Lown et al. · Bandura's Self-Efficacy Theory</p>
+                  <div className="grid grid-cols-3 gap-3 text-center mb-4">
+                    <div className="bg-gray-50 border rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">Before</p>
+                      <p className="text-3xl font-bold text-gray-800">{baselineFSES.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(baselineFSES).color}`}>{fsesLabel(baselineFSES).label}</p>
+                    </div>
+                    <div className={`rounded-lg p-4 flex flex-col items-center justify-center border ${delta >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <p className="text-xs text-gray-400 mb-1">Change</p>
+                      <p className={`text-3xl font-bold ${delta >= 0 ? 'text-green-600' : 'text-red-500'}`}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-xs text-gray-400 mb-1">After</p>
+                      <p className="text-3xl font-bold text-blue-700">{postScore.toFixed(1)}</p>
+                      <p className={`text-xs font-semibold mt-1 ${fsesLabel(postScore).color}`}>{fsesLabel(postScore).label}</p>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-blue-900 leading-relaxed">
+                      {delta > 0
+                        ? `Your financial self-efficacy improved by ${delta.toFixed(1)} points. Engaging with real market data and structured reflection is working — keep building on this momentum.`
+                        : delta === 0
+                        ? "Your score held steady. That's normal — self-efficacy shifts gradually. Continue working through the activities and retake to track your progress over time."
+                        : "Your score dipped slightly. This can happen when new knowledge reveals gaps you weren't aware of before — that's actually a sign of growth. Keep going."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('This will clear your post-assessment results. Are you sure?')) {
+                        try { localStorage.removeItem('fl_post_fses'); localStorage.removeItem('fl_post_answers'); } catch {}
+                        onGoToLearningPath();
+                      }
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  >Retake assessment</button>
+                </div>
+              );
+            }
+
+            // Timer hasn't started yet — allocation not locked
+            if (!sessionStart) {
+              return (
+                <div className="bg-white shadow rounded p-6">
+                  <h3 className="text-lg font-bold mb-1">Post-Assessment</h3>
+                  <p className="text-sm text-gray-500 mb-3">
+                    The 20-minute timer starts once you confirm your $1,000 allocation in the Portfolio tab. Lock in your picks to begin.
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <span>⚠</span>
+                    <span>Allocate your $1,000 portfolio to unlock this pathway.</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white shadow rounded p-6">
+                <div className="flex items-start justify-between mb-1">
+                  <h3 className="text-lg font-bold">Post-Assessment</h3>
+                  {unlocked && <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded">Unlocked</span>}
+                </div>
+                <p className="text-sm text-gray-500 mb-4">
+                  {unlocked
+                    ? "You've been exploring for 20 minutes. Your post-assessment is ready — retake the FSES to measure how your financial confidence has shifted."
+                    : "Available after 20 minutes of exploration. Use this time to work through your portfolio, news, and learning pathway."}
+                </p>
+                {!unlocked && (
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                      <span>{elapsedMin} of 20 minutes</span>
+                      <span>{20 - elapsedMin} min remaining</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-2.5 bg-blue-400 rounded-full transition-all duration-1000" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )}
+                {unlocked && (
+                  <button
+                    onClick={onGoToLearningPath}
+                    className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Take Post-Assessment →
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      );
+    }
+
+    // ── News Tab ───────────────────────────────────────────────────────────────
+    function NewsTab({ watchlist }) {
+      // newsData: { [ticker]: { articles: [], loading: bool, error: string } }
+      const [newsData, setNewsData] = useState({});
+
+      const tickerKey = watchlist.map(s => s.ticker).join(',');
+
+      useEffect(() => {
+        if (!watchlist.length) return;
+
+        // Reset and mark all tickers as loading
+        setNewsData(
+          Object.fromEntries(watchlist.map(s => [s.ticker, { articles: [], loading: true, error: '' }]))
+        );
+
+        // Fetch each ticker independently in parallel — guarantees results for every company
+        watchlist.forEach(stock => {
+          fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${stock.ticker}&limit=20&apikey=${API_KEY}`)
+            .then(r => r.json())
+            .then(json => {
+              if (json.Note || json.Information) throw new Error(json.Note || json.Information);
+              setNewsData(prev => ({
+                ...prev,
+                [stock.ticker]: { articles: json.feed || [], loading: false, error: '' },
+              }));
+            })
+            .catch(e => {
+              setNewsData(prev => ({
+                ...prev,
+                [stock.ticker]: { articles: [], loading: false, error: e.message },
+              }));
+            });
+        });
+      }, [tickerKey]);
+
+      const sentimentStyle = (label) => {
+        if (!label) return 'bg-gray-100 text-gray-500';
+        if (label.includes('Bullish')) return 'bg-green-100 text-green-700';
+        if (label.includes('Bearish')) return 'bg-red-100 text-red-600';
+        return 'bg-gray-100 text-gray-500';
+      };
+
+      const fmtDate = (str) => {
+        if (!str || str.length < 8) return '';
+        const y = str.slice(0, 4), mo = str.slice(4, 6), d = str.slice(6, 8);
+        return new Date(`${y}-${mo}-${d}`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      };
+
+      if (!watchlist.length) {
+        return (
+          <div className="bg-white shadow rounded p-8 text-center text-gray-400">
+            <p>No stocks in your portfolio yet. Pick 3 stocks to see tailored news.</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6">
+          {watchlist.map(stock => {
+            const d    = newsData[stock.ticker] || { articles: [], loading: true, error: '' };
+            const norm = t => (t || '').toUpperCase().trim();
+
+            const getSentiment = a => {
+              const ts = (a.ticker_sentiment || []).find(t => norm(t.ticker) === norm(stock.ticker));
+              return ts ? ts.ticker_sentiment_label : a.overall_sentiment_label;
+            };
+            const bullish = d.articles.filter(a => (getSentiment(a) || '').includes('Bullish')).slice(0, 4);
+            const bearish = d.articles.filter(a => (getSentiment(a) || '').includes('Bearish')).slice(0, 4);
+            const total   = bullish.length + bearish.length;
+
+            const ArticleCard = ({ a, side }) => (
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`block border rounded p-3 transition-colors group ${
+                  side === 'bull'
+                    ? 'border-green-100 hover:bg-green-50 hover:border-green-300'
+                    : 'border-red-100 hover:bg-red-50 hover:border-red-300'
+                }`}
+              >
+                <p className={`text-xs font-medium leading-snug mb-1.5 ${
+                  side === 'bull' ? 'text-gray-800 group-hover:text-green-800' : 'text-gray-800 group-hover:text-red-800'
+                }`}>
+                  {a.title}
+                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-gray-400">{a.source}</span>
+                  <span className="text-gray-300 text-xs">·</span>
+                  <span className="text-xs text-gray-400">{fmtDate(a.time_published)}</span>
+                </div>
+              </a>
+            );
+
+            return (
+              <div key={stock.ticker} className="bg-white shadow rounded p-5">
+                {/* Section header */}
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b">
+                  <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">{stock.ticker}</span>
+                  {stock.name && <span className="text-sm font-semibold text-gray-700">{stock.name}</span>}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {d.loading ? 'Loading…' : `${total} article${total !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
+
+                {d.loading && (
+                  <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    Fetching news for {stock.ticker}…
+                  </div>
+                )}
+
+                {!d.loading && d.error && (
+                  <p className="text-sm text-red-400 italic">{d.error}</p>
+                )}
+
+                {!d.loading && !d.error && total === 0 && (
+                  <p className="text-sm text-gray-400 italic">No bullish or bearish articles found for {stock.ticker} right now.</p>
+                )}
+
+                {!d.loading && total > 0 && (
+                  <>
+                    {/* Bias check banner */}
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 mb-4">
+                      <span className="text-amber-500 text-sm mt-0.5 flex-shrink-0">⚖</span>
+                      <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                        <strong>Confirmation Bias Check</strong> — read both sides before deciding. Strong investors actively seek out the case against their own position.
+                      </p>
+                    </div>
+
+                    {/* Two-column layout */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Bullish column */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <span className="text-green-600 font-bold text-sm">↑</span>
+                          <h4 className="text-sm font-bold text-green-700">Bullish Case</h4>
+                          <span className="text-xs text-green-500 ml-auto">{bullish.length} article{bullish.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {bullish.length > 0 ? (
+                          <div className="space-y-2">
+                            {bullish.map((a, i) => <ArticleCard key={i} a={a} side="bull" />)}
+                          </div>
+                        ) : (
+                          <div className="border border-dashed border-green-200 rounded p-4 text-center">
+                            <p className="text-xs text-gray-400 italic">No bullish articles in this batch.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bearish column */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <span className="text-red-500 font-bold text-sm">↓</span>
+                          <h4 className="text-sm font-bold text-red-600">Bearish Case</h4>
+                          <span className="text-xs text-red-400 ml-auto">{bearish.length} article{bearish.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {bearish.length > 0 ? (
+                          <div className="space-y-2">
+                            {bearish.map((a, i) => <ArticleCard key={i} a={a} side="bear" />)}
+                          </div>
+                        ) : (
+                          <div className="border border-dashed border-red-200 rounded p-4 text-center">
+                            <p className="text-xs text-gray-400 italic">No bearish articles in this batch.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── App ────────────────────────────────────────────────────────────────────
+    function App() {
+      const ls = {
+        get: (key, fallback) => { try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; } catch { return fallback; } },
+        set: (key, val)      => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
+        clear: ()            => { Object.keys(localStorage).filter(k => k.startsWith('fl_')).forEach(k => localStorage.removeItem(k)); },
+      };
+
+      const savedFSES   = ls.get('fl_fses', null);
+      const savedList   = ls.get('fl_watchlist', []);
+
+      const [showAssessment,  setShowAssessment]  = useState(savedFSES === null);
+      const [showStockPicker, setShowStockPicker] = useState(false);
+      const [baselineFSES,    setBaselineFSES]    = useState(savedFSES);
+      const [participantFlags,setParticipantFlags]= useState(() => ls.get('fl_flags', null));
+      const [watchlist,       setWatchlist]       = useState(savedList);
+      const [stockReasoning,  setStockReasoning]  = useState(() => ls.get('fl_reasoning', ''));
+      const [tab,             setTab]             = useState(() => ls.get('fl_tab', 'portfolio'));
+
+      // (timer is stamped by AllocationSection when the user locks their $1k allocation)
+
+      // Sync every piece of state to localStorage whenever it changes
+      useEffect(() => { ls.set('fl_fses',      baselineFSES);    }, [baselineFSES]);
+      useEffect(() => { ls.set('fl_flags',     participantFlags); }, [participantFlags]);
+      useEffect(() => { ls.set('fl_watchlist', watchlist);        }, [watchlist]);
+      useEffect(() => { ls.set('fl_reasoning', stockReasoning);   }, [stockReasoning]);
+      useEffect(() => { ls.set('fl_tab',       tab);              }, [tab]);
+
+      const handleAssessmentDone = (avg, flags) => {
+        setBaselineFSES(avg);
+        setParticipantFlags(flags);
+        setShowAssessment(false);
+        setShowStockPicker(true);
+      };
+
+      const handleStocksDone = (picks, reasoning) => {
+        setWatchlist(picks);
+        setStockReasoning(reasoning || '');
+        setShowStockPicker(false);
+      };
+
+      const handleReset = () => {
+        if (!window.confirm('This will erase all your saved progress and restart from the beginning. Are you sure?')) return;
+        ls.clear();
+        setBaselineFSES(null);
+        setParticipantFlags(null);
+        setWatchlist([]);
+        setStockReasoning('');
+        setTab('portfolio');
+        setShowStockPicker(false);
+        setShowAssessment(true);
+      };
+
+      const tabs = [
+        { key: 'portfolio', label: 'My Portfolio'   },
+        { key: 'scores',    label: 'My Scores'      },
+        { key: 'learn',     label: 'Learning Path'  },
+        { key: 'news',      label: 'Daily News'     },
+      ];
 
       const handleAddSavings = () => {
         const input = prompt("How much would you like to add?");
@@ -140,85 +2120,93 @@
 
       return (
         <>
-          {showSplash && <SplashModal onClose={() => setShowSplash(false)} />}
+          {showAssessment  && <AssessmentModal  onClose={handleAssessmentDone} />}
+          {showStockPicker && <StockPickerModal onClose={handleStocksDone} />}
+
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
-              <h1 className="text-3xl font-bold">📈 The Litmus Dashboard</h1>
+              <h1 className="text-3xl font-bold">Financial Litmus</h1>
+              <div className="flex items-center gap-3">
+                {baselineFSES !== null && (
+                  <span className="text-sm text-gray-500 bg-white shadow rounded px-3 py-1">
+                    FSES: <strong>{baselineFSES.toFixed(1)}</strong> / 5
+                  </span>
+                )}
+                {baselineFSES !== null && (
+                  <button
+                    onClick={handleReset}
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    title="Erase saved progress and restart"
+                  >
+                    Start Over
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="space-x-4">
-              <button className={`px-4 py-2 rounded ${tab === "portfolio" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("portfolio")}>My Portfolio</button>
-              <button className={`px-4 py-2 rounded ${tab === "news" ? "bg-blue-500 text-white" : "bg-gray-300"}`} onClick={() => setTab("news")}>Daily News</button>
+            <div className="space-x-2">
+              {tabs.map(({ key, label }) => (
+                <button key={key} onClick={() => setTab(key)}
+                  className={`px-4 py-2 rounded ${tab === key ? 'bg-blue-500 text-white' : 'bg-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {tab === "portfolio" && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white shadow rounded p-4">
-                    <h2 className="text-xl font-semibold mb-4">Current Holdings</h2>
-                    <canvas ref={chartRef} width="300" height="300" />
+            {tab === 'portfolio' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Your Watchlist</h2>
+                    <p className="text-sm text-gray-500">Actual price movement over the past 7 trading days</p>
                   </div>
+                  <button
+                    onClick={() => setShowStockPicker(true)}
+                    className="text-xs text-blue-500 hover:underline"
+                  >
+                    Change stocks
+                  </button>
+                </div>
 
-                  <div className="bg-white shadow rounded p-4">
-                    <h2 className="text-xl font-semibold mb-4">Stock Performance</h2>
-                    <ul className="space-y-2">
-                      {stockData.map((stock) => {
-                        const status = stock.price === "N/A" ? "neutral" : stock.change > 0 ? "up" : stock.change < 0 ? "down" : "neutral";
-                        return (
-                          <li key={stock.ticker}>
-                            <div className={`cursor-pointer flex justify-between items-center px-2 py-1 rounded ${status === "up" ? "text-green-600" : status === "down" ? "text-red-500" : "text-yellow-600"} hover:bg-gray-100`} onClick={() => setExpandedStock(expandedStock === stock.ticker ? null : stock.ticker)}>
-                              <span>{stock.ticker}</span>
-                              <span>{stock.price === "N/A" ? "N/A" : `$${parseFloat(stock.price).toFixed(2)} (${stock.change.toFixed(2)}%)${stock.marketClosed ? " - Market Closed" : ""}`}</span>
-                            </div>
-                            {expandedStock === stock.ticker && (
-                              <div className="mt-2 ml-2 p-2 bg-gray-50 border rounded text-gray-800 text-sm">
-                                <p><strong>Ticker:</strong> {stock.ticker}</p>
-                                <p><strong>Price:</strong> {stock.price}</p>
-                                <p><strong>Change:</strong> {stock.change.toFixed(2)}%</p>
-                                <p><strong>Status:</strong> {stock.marketClosed ? "Market Closed" : "Live"}</p>
-                                <p><em>Data from Alpha Vantage</em></p>
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                {stockReasoning && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-1">
+                    <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">Your Investment Rationale</p>
+                    <p className="text-sm text-blue-900 italic leading-relaxed">"{stockReasoning}"</p>
                   </div>
-                </div>
+                )}
 
-                <div className="bg-white shadow rounded p-4 mt-6">
-                  <h2 className="text-xl font-semibold mb-4">My First Portfolio Wizard</h2>
-                  <p className="mb-2">Answer a few questions to create your first investment plan.</p>
-                  <button className="bg-blue-500 text-white px-4 py-2 rounded">Start Setup</button>
-                </div>
-
-                <div className="bg-white shadow rounded p-4 mt-6">
-                  <h2 className="text-xl font-semibold mb-2">🎯 Shared Savings Goal</h2>
-                  <p className="mb-1">Goal: Save $200 for college fund</p>
-                  <div className="w-full bg-gray-200 h-4 rounded overflow-hidden mb-2">
-                    <div className="bg-green-500 h-full" style={{ width: `${(goalProgress / goalTotal) * 100}%` }}></div>
+                {watchlist.length === 0 ? (
+                  <div className="bg-white shadow rounded p-8 text-center text-gray-400">
+                    <p className="text-lg mb-2">No stocks selected yet.</p>
+                    <button onClick={() => setShowStockPicker(true)} className="text-blue-500 text-sm hover:underline">
+                      Pick your 3 stocks
+                    </button>
                   </div>
-                  <p className="text-sm mb-2">Progress: ${goalProgress.toFixed(2)} / ${goalTotal}</p>
-                  <button onClick={handleAddSavings} className="bg-green-600 text-white px-4 py-2 rounded">Add to Goal</button>
-                </div>
-              </>
-            )}
-
-            {tab === "news" && (
-              <div className="bg-white shadow rounded p-4">
-                <h2 className="text-xl font-semibold mb-4">Today's Headlines</h2>
-                <ul className="space-y-2">
-                  <li>📊 Tech sector rebounds after dip</li>
-                  <li>🛢️ Oil prices stabilize</li>
-                  <li>🛒 Retail stocks show upward trend</li>
-                </ul>
-                <div className="mt-4">
-                  <p className="font-medium">🧠 Quick Poll:</p>
-                  <p className="mb-2">Which sector is booming today?</p>
-                  <input className="border px-2 py-1 rounded w-full" placeholder="Type your answer..." />
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {watchlist.map(stock => <StockCard key={stock.ticker} stock={stock} />)}
+                    </div>
+                    <AllocationSection watchlist={watchlist} />
+                  </>
+                )}
               </div>
             )}
+
+            {tab === 'scores' && <ScoresTab baselineFSES={baselineFSES} participantFlags={participantFlags} onGoToLearningPath={() => setTab('learn')} />}
+
+            {tab === 'learn' && (
+              baselineFSES === null ? (
+                <div className="bg-white shadow rounded p-10 text-center text-gray-400">
+                  <p className="text-lg font-medium mb-2">No assessment yet</p>
+                  <p className="text-sm">Complete the FSES assessment first — your personalized learning path will appear here.</p>
+                </div>
+              ) : (
+                <AdaptiveLearningPlan baselineFSES={baselineFSES} watchlist={watchlist} />
+              )
+            )}
+
+            {tab === 'news' && <NewsTab watchlist={watchlist} />}
           </div>
         </>
       );
