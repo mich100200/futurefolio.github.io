@@ -1,0 +1,3 @@
+window.ENV = {
+  ALPHA_VANTAGE_KEY: '2DY117THXKMZE74F'
+};
