@@ -4,8 +4,12 @@
   <meta charset="UTF-8" />
   <title>Financial Litmus</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- React + Babel -->
   <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -137,6 +141,7 @@
         }
       };
 
+    function SplashModal({ onClose }) {
       return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full">
@@ -2561,6 +2566,16 @@
         { key: 'news',      label: 'Daily News'     },
       ];
 
+      const handleAddSavings = () => {
+        const input = prompt("How much would you like to add?");
+        const amount = parseFloat(input);
+        if (!isNaN(amount) && amount > 0) {
+          setGoalProgress((prev) => Math.min(prev + amount, goalTotal));
+        } else {
+          alert("Please enter a valid number greater than 0.");
+        }
+      };
+
       return (
         <>
           {showAssessment  && <AssessmentModal  onClose={handleAssessmentDone} />}
@@ -2663,7 +2678,7 @@
       );
     }
 
-    ReactDOM.render(<App />, document.getElementById('root'));
+    ReactDOM.render(<App />, document.getElementById("root"));
   </script>
 </body>
 </html>
